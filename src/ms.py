@@ -4,29 +4,13 @@ import numpy as np
 import scipy as sp
 import networkx as nx
 
+from src import graph_methods
 
-def get_increasing_graph(edge_graph, gradient_function):
-    """
-    """
-    increasing_graph = nx.DiGraph()
-    increasing_graph.add_nodes_from(edge_graph.nodes)
-    for node in edge_graph.nodes():
-        neighbors = list(edge_graph.neighbors(node))
-        grad_vals = gradient_function(node, neighbors)
-        if (grad_vals > 0).any():
-            increasing_graph.add_edge(node, neighbors[grad_vals.argmax()])
-    return increasing_graph
 
-def get_chain_from(graph: nx.DiGraph, start):
-    """
-    """
-    chain = [start]
-    while graph.out_degree(chain[-1]) == 1:
-        chain.append(next(iter(graph.successors(chain[-1]))))
-    return chain
+
 
 class MorseSmale:
-    def __init__(self, faces, values, vertices=None):
+    def __init__(self, faces, values, vertices=None, forest_method='steepest'):
         """
         """
         self.faces = np.unique(np.sort(faces, axis=1), axis=0)
@@ -42,12 +26,26 @@ class MorseSmale:
         self.n_edges = np.unique(np.sort(np.concatenate(self.faces[:, [[0, 1], [0, 2], [1, 2]]]), axis=1), axis=0).shape[0]
         self.n_faces = self.faces.shape[0]
     
+        if forest_method.lower() == 'steepest':
+            self._get_increasing_graph_method = graph_methods.get_steepest_increasing_graph
+        if forest_method.lower() == 'spaning':
+            self._get_increasing_graph_method = graph_methods.get_spaning_increasing_graph
+
+    def distance(self, index0, index1):
+        """
+        """
+        if self.vertices is not None:
+            return np.linalg.norm(self.vertices[index1] - self.vertices[index0], axis=-1)
+        else:
+            return np.array(index0 != index1).astype(int)
+
     def gradient(self, index0, index1):
         """
         """
-        val = self.values[index1] - self.values[index0]
-        if self.vertices is not None:
-            val /= np.linalg.norm(self.vertices[index1] - self.vertices[index0], axis=1)
+        #val = self.values[index1] - self.values[index0]
+        #if self.vertices is not None:
+        #    val /= np.linalg.norm(self.vertices[index1] - self.vertices[index0], axis=1)
+        val = (self.values[index1] - self.values[index0])/self.distance(index0, index1)
         return val
     
     def get_edge_graph(self) -> nx.Graph:
@@ -68,7 +66,9 @@ class MorseSmale:
         try:
             return self.increasing_graph
         except AttributeError:
-            self.increasing_graph = get_increasing_graph(self.get_edge_graph(), self.gradient)
+            self.increasing_graph = self._get_increasing_graph_method(self.get_edge_graph(), 
+                                                                      gradient_function=self.gradient, 
+                                                                      distance_function=self.distance)
             return self.increasing_graph
 
     def get_decreasing_graph(self) -> nx.DiGraph:
@@ -77,7 +77,9 @@ class MorseSmale:
         try:
             return self.decreasing_graph
         except AttributeError:
-            self.decreasing_graph = get_increasing_graph(self.get_edge_graph(), lambda i0, i1: self.gradient(i1, i0))
+            self.decreasing_graph = self._get_increasing_graph_method(self.get_edge_graph(), 
+                                                                      gradient_function=lambda i0, i1: self.gradient(i1, i0), 
+                                                                      distance_function=self.distance)
             return self.decreasing_graph
     
     def define_critical_points(self):
@@ -136,10 +138,11 @@ class MorseSmale:
         """
         """
         for saddle, next_node in self.iterate_saddles_and_increasing_directions():
-            path = get_chain_from(self.get_increasing_graph(), next_node)
+            path = graph_methods.get_chain_from(self.get_increasing_graph(), next_node)
             path = np.append(saddle, path)
             yield path
         for saddle, next_node in self.iterate_saddles_and_decreasing_directions():
-            path = get_chain_from(self.get_decreasing_graph(), next_node)
+            path = graph_methods.get_chain_from(self.get_decreasing_graph(), next_node)
             path = np.append(saddle, path)
             yield path
+
