@@ -7,6 +7,15 @@ import matplotlib.colors as mcolors
 from src.ms import MorseSmale
 
 
+def get_pv_mesh(vertices, faces):
+    """
+    Docstring for get_pv_mesh
+    
+    :param faces: Description
+    """
+    faces_pv = np.hstack([np.full((faces.shape[0], 1), 3, dtype=faces.dtype), faces]).ravel()
+    mesh = pv.PolyData(vertices, faces_pv)
+    return mesh
 
 def _pos_to_array(G, pos):
     """

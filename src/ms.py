@@ -166,7 +166,8 @@ class MorseSmale:
             return self.faces_components_by_paths
         
         # represent face_graph edges as pairs of vertex ids triplets
-        edges_face_repr = self.faces[np.array(list(self.get_face_graph().edges))]
+        edges = list(self.get_face_graph().edges)
+        edges_face_repr = self.faces[np.array(edges)]
 
         # define the edges of the complex coresponding the edges of the graph
         edges_edge_repr = -1*np.ones([edges_face_repr.shape[0], 2], dtype=int)
@@ -183,9 +184,9 @@ class MorseSmale:
         remove_conds = edges_edge_repr[:, None, :, None] == paths_edges[None, :, None, :]
         remove_conds = (remove_conds[:, :, 0, 0] & remove_conds[:, :, 1, 1]).any(axis=-1)
 
-        edges_to_remove = [edge for edge, cond in zip(self.get_face_graph().edges, remove_conds) if cond]
+        edges_to_remove = [edge for edge, cond in zip(edges, remove_conds) if cond]
 
-        face_graph_reduced = self.get_face_graph().copy()
+        face_graph_reduced = self.get_face_graph()
         face_graph_reduced.remove_edges_from(edges_to_remove)
 
         # define components for faces
