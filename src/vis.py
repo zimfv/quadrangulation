@@ -261,7 +261,7 @@ def plot_ms_comparition(mss: list[MorseSmale], titles=None, font_size=12,
             pl.subplot(i_row, i_col)
             pl.add_text(f'{title} - Vlaues', font_size=font_size)
             add_complex_to_plotter(pl, ms, opacity=opacity0, smooth_shading=False, show_edges=True, 
-                                   with_values=True, value_cmap=value_cmap, data_title='values', 
+                                   with_values=True, value_cmap=value_cmap, data_title=f'{title} - Vlaues', 
                                    with_critical_points=True, min_color=min_color, saddle_color=saddle_color, max_color=max_color, point_size=point_size, 
                                    with_paths=True, path_color=path_color, linewidth=linewidth, eps=0.0)
         i_row += 1

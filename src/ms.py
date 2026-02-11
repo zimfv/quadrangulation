@@ -51,36 +51,30 @@ class MorseSmale:
     def get_edge_graph(self) -> nx.Graph:
         """
         """
-        try:
-            return self.edge_graph
-        except AttributeError:
+        if not hasattr(self, 'edge_graph'):
             self.edge_graph = nx.Graph()
             self.edge_graph.add_nodes_from(range(self.n_vertices))
             edges = np.unique(np.sort(np.concatenate(self.faces[:, [[0, 1], [0, 2], [1, 2]]]), axis=1), axis=0)
             self.edge_graph.add_edges_from(edges)
-            return self.edge_graph
+        return self.edge_graph.copy()
     
     def get_increasing_graph(self) -> nx.DiGraph:
         """
         """
-        try:
-            return self.increasing_graph
-        except AttributeError:
+        if not hasattr(self, 'increasing_graph'):
             self.increasing_graph = self._get_increasing_graph_method(self.get_edge_graph(), 
                                                                       gradient_function=self.gradient, 
                                                                       distance_function=self.distance)
-            return self.increasing_graph
+        return self.increasing_graph.copy()
 
     def get_decreasing_graph(self) -> nx.DiGraph:
         """
         """
-        try:
-            return self.decreasing_graph
-        except AttributeError:
+        if not hasattr(self, 'decreasing_graph'):
             self.decreasing_graph = self._get_increasing_graph_method(self.get_edge_graph(), 
                                                                       gradient_function=lambda i0, i1: self.gradient(i1, i0), 
                                                                       distance_function=self.distance)
-            return self.decreasing_graph
+        return self.decreasing_graph.copy()
     
     def define_critical_points(self):
         """
@@ -146,3 +140,59 @@ class MorseSmale:
             path = np.append(saddle, path)
             yield path
 
+    def get_paths(self):
+        """
+        """
+        if not hasattr(self, 'paths'):
+            self.paths = list(self.iterate_paths())
+        return self.paths
+
+    def get_face_graph(self):
+        """
+        """
+        if not hasattr(self, 'face_graph'):
+            self.face_graph = nx.Graph()
+            self.face_graph.add_nodes_from(range(self.n_faces))
+            for (i0, face0), (i1, face1) in itertools.combinations(enumerate(self.faces), 2):
+                intersection = np.intersect1d(face0, face1)
+                if len(intersection) == 2:
+                    self.face_graph.add_edge(i0, i1, intersection=intersection)
+        return self.face_graph.copy()
+    
+    def define_decomposition_by_paths(self):
+        """
+        """
+        if hasattr(self, 'faces_components_by_paths'):
+            return self.faces_components_by_paths
+        
+        # represent face_graph edges as pairs of vertex ids triplets
+        edges_face_repr = self.faces[np.array(list(self.get_face_graph().edges))]
+
+        # define the edges of the complex coresponding the edges of the graph
+        edges_edge_repr = -1*np.ones([edges_face_repr.shape[0], 2], dtype=int)
+        for j0, j1 in itertools.product(itertools.combinations(range(3), 2), repeat=2):
+            cond = (edges_face_repr[:, 0, list(j0)] == edges_face_repr[:, 1, list(j1)]).all(axis=1)
+            edges_edge_repr[cond] = edges_face_repr[cond][:, 0, (list(j0))]
+        edges_edge_repr = np.sort(edges_edge_repr, axis=1)
+
+        # edges of the complex inclued into paths
+        paths_edges = np.concatenate([np.transpose([path[:-1], path[1:]]) for path in self.get_paths()])
+        paths_edges = np.unique(np.sort(paths_edges, axis=1), axis=0)
+
+        # remove edges from graph, which are included into paths
+        remove_conds = edges_edge_repr[:, None, :, None] == paths_edges[None, :, None, :]
+        remove_conds = (remove_conds[:, :, 0, 0] & remove_conds[:, :, 1, 1]).any(axis=-1)
+
+        edges_to_remove = [edge for edge, cond in zip(self.get_face_graph().edges, remove_conds) if cond]
+
+        face_graph_reduced = self.get_face_graph().copy()
+        face_graph_reduced.remove_edges_from(edges_to_remove)
+
+        # define components for faces
+        self.faces_components_by_paths = -np.ones(self.n_faces, dtype=int)
+        for i, comp in enumerate(nx.connected_components(face_graph_reduced)):
+            self.faces_components_by_paths[list(comp)] = i
+
+        return self.faces_components_by_paths
+        
+    
