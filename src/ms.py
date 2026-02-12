@@ -195,5 +195,25 @@ class MorseSmale:
             self.faces_components_by_paths[list(comp)] = i
 
         return self.faces_components_by_paths
-        
     
+    def get_surrounding_faces(self, chain, level=0):
+        """
+        """
+        faces_vertex_permutations = self.faces[:, [list(perm) for perm in itertools.permutations(range(3), 2)]][..., None]
+        chain_edges = np.array([chain[:-1], chain[1:]])
+        surrounding_faces0 = np.argwhere((faces_vertex_permutations == chain_edges).all(axis=-2).any(axis=(-1, -2))).reshape(-1)
+        dist = nx.multi_source_dijkstra_path_length(self.get_face_graph(), sources=set(surrounding_faces0))
+        surrounding_faces = np.array([key for key, value in dist.items() if value <= level])
+        return surrounding_faces
+    
+    def get_surrounding_disk_cuts(self, chain):
+        """
+        """
+        pass
+
+    def get_geodesic_homotopic_to_edge_chain(self, chain, max_level=2):
+        """
+        """
+        pass
+
+        
