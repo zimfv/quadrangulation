@@ -4,8 +4,9 @@ import numpy as np
 import scipy as sp
 import networkx as nx
 
-from src import graph_methods
+from pygeodesic import geodesic
 
+from src import graph_methods, geometry, triangletools
 
 
 
@@ -206,14 +207,79 @@ class MorseSmale:
         surrounding_faces = np.array([key for key, value in dist.items() if value <= level])
         return surrounding_faces
     
-    def get_surrounding_disk_cuts(self, chain):
-        """
-        """
-        pass
 
-    def get_geodesic_homotopic_to_edge_chain(self, chain, max_level=2):
+    def get_face_distances_from_chain(self, chain, weight_function='area'):
         """
         """
-        pass
+        if type(weight_function) is str:
+            if weight_function == 'area':
+                def weight_function(face0, face1):
+                    a, b = self.vertices[np.intersect1d(face0, face1)]
+                    c0 = self.vertices[face0].mean(axis=0)
+                    c1 = self.vertices[face1].mean(axis=0)
+                    return geometry.triangle_area(a, b, c0) + geometry.triangle_area(a, b, c1)
+            elif weight_function == 'length':
+                def weight_function(face0, face1):
+                    a, b = self.vertices[np.intersect1d(face0, face1)]
+                    return np.linalg.norm(a - b)
+            else:
+                raise ValueError("Expected weight_function parameter be None, str from ['area', 'length'] or the function of 2 parameters")
+        if weight_function is None:
+            weight = 'weight'
+        else:
+            def weight(u, v, *args, **kwargs):
+                return weight_function(self.faces[u], self.faces[v]) if u != v else 0
+
+        
+        faces_vertex_permutations = self.faces[:, [list(perm) for perm in itertools.permutations(range(3), 2)]][..., None]
+        chain_edges = np.array([chain[:-1], chain[1:]])
+        surrounding_faces0 = np.argwhere((faces_vertex_permutations == chain_edges).all(axis=-2).any(axis=(-1, -2))).reshape(-1)
+        dist = nx.multi_source_dijkstra_path_length(self.get_face_graph(), sources=set(surrounding_faces0), weight=weight)
+        dist = np.array([dist[i] for i in range (self.n_faces)])
+        return dist
+    
+    
+    def get_surrounding_disks_face_indices(self, chain, weight_function='area', max_distance=np.inf):
+        """
+        """
+        face_distances = self.get_face_distances_from_chain(chain, weight_function)
+        face_order = np.argsort(face_distances)
+        face_add_status = np.zeros_like(face_order, dtype=bool)
+        face_add_status[face_distances == 0] = True
+        for i in face_order:
+            if triangletools.is_homotopy_preserving_face_addition(self.faces[face_add_status], self.faces[i]):
+                face_add_status[i] = True
+        surrounding_disks_face_indices = np.argwhere(face_add_status & (face_distances <= max_distance)).reshape(-1)
+        
+        return surrounding_disks_face_indices
+
+
+    def get_geodesic_homotopic_to_edge_chain(self, chain, weight_function='area', max_distance=np.inf, with_distance=False):
+        """
+        """
+        surrounding_disk_faces = self.faces[self.get_surrounding_disks_face_indices(chain, weight_function, max_distance)]
+        
+        face_components = triangletools.get_faces_components(surrounding_disk_faces)
+        if (len(face_components) != 1) or np.intersect1d(np.unique(surrounding_disk_faces), chain).size != len(chain):
+            print('Wow! Uncomputable geodesic, some faces are missed')
+            return self.vertices[chain]
+        
+        V, F, old2new, new2old = triangletools.compact_mesh(self.vertices, surrounding_disk_faces)
+        source_vid = old2new[chain[0]]
+        target_vid = old2new[chain[-1]]
+
+        geo = geodesic.PyGeodesicAlgorithmExact(V, F)
+        geo_distance, geopath = geo.geodesicDistance(source_vid, target_vid)
+
+        if with_distance:
+            return geopath, geo_distance
+        return geopath
+    
+    def iterate_geodesics_homotopic_to_paths(self, weight_function='area', max_distance=np.inf, with_distance=False):
+        """
+        """
+        for path in self.get_paths():
+            yield self.get_geodesic_homotopic_to_edge_chain(path, weight_function, max_distance, with_distance)
+        
 
         
