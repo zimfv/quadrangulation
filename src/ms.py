@@ -8,10 +8,11 @@ from pygeodesic import geodesic
 
 from src import graph_methods, geometry, triangletools
 
+import warnings
 
 
 class MorseSmale:
-    def __init__(self, faces, values, vertices=None, forest_method='steepest'):
+    def __init__(self, faces, values, vertices=None, forest_method='steepest', gradient_respects_distance=False):
         """
         """
         self.faces = np.unique(np.sort(faces, axis=1), axis=0)
@@ -31,6 +32,8 @@ class MorseSmale:
             self._get_increasing_graph_method = graph_methods.get_steepest_increasing_graph
         if forest_method.lower() == 'spaning':
             self._get_increasing_graph_method = graph_methods.get_spaning_increasing_graph
+        
+        self.gradient_respects_distance = gradient_respects_distance
 
     def distance(self, index0, index1):
         """
@@ -43,10 +46,10 @@ class MorseSmale:
     def gradient(self, index0, index1):
         """
         """
-        #val = self.values[index1] - self.values[index0]
-        #if self.vertices is not None:
-        #    val /= np.linalg.norm(self.vertices[index1] - self.vertices[index0], axis=1)
-        val = (self.values[index1] - self.values[index0])/self.distance(index0, index1)
+        if self.gradient_respects_distance:
+            val = (self.values[index1] - self.values[index0])/self.distance(index0, index1)
+        else:
+            val = (self.values[index1] - self.values[index0])
         return val
     
     def get_edge_graph(self) -> nx.Graph:
@@ -80,6 +83,9 @@ class MorseSmale:
     def define_critical_points(self):
         """
         """
+        if (hasattr(self, 'mins') and hasattr(self, 'maxs') and hasattr(self, 'saddles')):
+            return None
+
         self.get_edge_graph()
 
         self.mins = []
@@ -259,10 +265,14 @@ class MorseSmale:
         """
         surrounding_disk_faces = self.faces[self.get_surrounding_disks_face_indices(chain, weight_function, max_distance)]
         
-        face_components = triangletools.get_faces_components(surrounding_disk_faces)
-        if (len(face_components) != 1) or np.intersect1d(np.unique(surrounding_disk_faces), chain).size != len(chain):
-            print('Wow! Uncomputable geodesic, some faces are missed')
-            return self.vertices[chain]
+        #face_components = triangletools.get_faces_components(surrounding_disk_faces)
+        #if (len(face_components) != 1) or np.intersect1d(np.unique(surrounding_disk_faces), chain).size != len(chain):
+        #    print('Wow! Uncomputable geodesic, some faces are missed. Returning the original path')
+        #    geopath = self.vertices[chain]
+        #    if with_distance:
+        #        geo_distance = np.linalg.norm(geopath[1:] - geopath[:-1], axis=1).sum()
+        #        return geopath, geo_distance
+        #    return geopath
         
         V, F, old2new, new2old = triangletools.compact_mesh(self.vertices, surrounding_disk_faces)
         source_vid = old2new[chain[0]]
@@ -271,15 +281,63 @@ class MorseSmale:
         geo = geodesic.PyGeodesicAlgorithmExact(V, F)
         geo_distance, geopath = geo.geodesicDistance(source_vid, target_vid)
 
+        if len(geopath) == 0:
+            warnings.warn('Wow! Uncomputable geodesic, some faces are missed. Returning the original path')
+            geopath = self.vertices[chain]
+            geo_distance = np.linalg.norm(geopath[1:] - geopath[:-1], axis=1).sum()
+            
         if with_distance:
             return geopath, geo_distance
         return geopath
     
+
     def iterate_geodesics_homotopic_to_paths(self, weight_function='area', max_distance=np.inf, with_distance=False):
         """
         """
         for path in self.get_paths():
             yield self.get_geodesic_homotopic_to_edge_chain(path, weight_function, max_distance, with_distance)
+
+
+    def get_paths_graph(self) -> nx.MultiGraph:
+        """
+        """
+        self.define_critical_points()
+
+        g_paths = nx.MultiGraph()
+        g_paths.add_nodes_from(self.mins, critical_type="min")
+        g_paths.add_nodes_from(self.maxs, critical_type="max")
+        g_paths.add_nodes_from(self.saddles, critical_type="saddle")
+
+        for path in self.get_paths():
+            v0, v1 = path[[0, -1]]
+            g_paths.add_edge(v0, v1, path=path.copy())
+        return g_paths
+    
+
+    def get_paths_graph_after_cancellations(self) -> nx.MultiGraph:
+        """
+        """
+        g_paths = self.get_paths_graph()
+        mins_to_cancel = [node for node, data in g_paths.nodes(data=True) if (g_paths.degree(node) <= 2) and (data['critical_type'] == 'min')]
+        maxs_to_cancel = [node for node, data in g_paths.nodes(data=True) if (g_paths.degree(node) <= 2) and (data['critical_type'] == 'max')]
+
+        g_simplifyed = g_paths.copy()
+        pass
+
+        return g_simplifyed
+
+
+
+    def get_geodesics_graph(self, weight_function='area', max_distance=np.inf, do_cancellations=False) -> nx.MultiGraph:
+        """
+        """
+        if do_cancellations:
+            g = self.get_paths_graph_after_cancellations()
+        else:
+            g = self.get_paths_graph()
         
+        for u, v, key, data in g.edges(keys=True, data=True):
+            data["geopath"] = self.get_geodesic_homotopic_to_edge_chain(data["path"], weight_function, max_distance, with_distance=False)
+        return g
 
         
