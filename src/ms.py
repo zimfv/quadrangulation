@@ -7,6 +7,7 @@ import networkx as nx
 from pygeodesic import geodesic
 
 from src import graph_methods, geometry, triangletools
+from src.graph_simplification import simplify_graph
 
 import warnings
 
@@ -317,21 +318,16 @@ class MorseSmale:
     def get_paths_graph_after_cancellations(self) -> nx.MultiGraph:
         """
         """
-        g_paths = self.get_paths_graph()
-        mins_to_cancel = [node for node, data in g_paths.nodes(data=True) if (g_paths.degree(node) <= 2) and (data['critical_type'] == 'min')]
-        maxs_to_cancel = [node for node, data in g_paths.nodes(data=True) if (g_paths.degree(node) <= 2) and (data['critical_type'] == 'max')]
-
-        g_simplifyed = g_paths.copy()
-        pass
-
+        g_simplifyed = simplify_graph(self.get_paths_graph(), self.values)
+        
         return g_simplifyed
 
 
 
-    def get_geodesics_graph(self, weight_function='area', max_distance=np.inf, do_cancellations=False) -> nx.MultiGraph:
+    def get_geodesics_graph(self, weight_function='area', max_distance=np.inf, simplify=True) -> nx.MultiGraph:
         """
         """
-        if do_cancellations:
+        if simplify:
             g = self.get_paths_graph_after_cancellations()
         else:
             g = self.get_paths_graph()
