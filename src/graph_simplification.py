@@ -77,6 +77,10 @@ def make_cancellation(graph: nx.MultiGraph, values, node0, node1=None):
 
         return graph_after
     
+    else:
+        graph_after = graph.copy()
+        
+
     raise ValueError('Not yet solved case with a monkey saddle')
 
 
