@@ -253,7 +253,8 @@ class MorseSmale:
         face_order = np.argsort(face_distances)
         face_add_status = np.zeros_like(face_order, dtype=bool)
         face_add_status[face_distances == 0] = True
-        for i in face_order:
+        #for i in face_order:
+        for i in face_order[face_distances <= max_distance]:
             if triangletools.is_homotopy_preserving_face_addition(self.faces[face_add_status], self.faces[i]):
                 face_add_status[i] = True
         surrounding_disks_face_indices = np.argwhere(face_add_status & (face_distances <= max_distance)).reshape(-1)
