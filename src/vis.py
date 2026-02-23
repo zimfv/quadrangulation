@@ -60,8 +60,17 @@ def add_graph_to_plotter(pl: pv.Plotter, G: nx.Graph, pos, offset=(0.0, 0.0, 0.0
     pts = pv.PolyData(P)
     edges_pd, node_index = _edges_polydata(nodes, P, G.edges())
 
+    if isinstance(node_color, (list, np.ndarray)):
+        node_color = np.asarray(node_color)
+        if len(node_color) != len(nodes):
+            raise ValueError("node_color array must match number of nodes")
+
+        pts["node_color"] = node_color
+        pl.add_mesh(pts, scalars="node_color", rgb=True, point_size=node_size, render_points_as_spheres=True)
+    else:
+        pl.add_mesh(pts, color=node_color, point_size=node_size, render_points_as_spheres=True)
+    
     pl.add_mesh(edges_pd, color=edge_color, line_width=edge_width, render_lines_as_tubes=True)
-    pl.add_mesh(pts, color=node_color, point_size=node_size, render_points_as_spheres=True)
 
     if add_labels:
         pl.add_point_labels(P, [str(n) for n in nodes], point_size=0, font_size=12)
