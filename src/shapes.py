@@ -145,7 +145,7 @@ def get_couple_linked_tori(n0, n1, r0=0.5, r1=0.5):
     return linked_tori_vertices, linked_tori_faces
 
 
-def get_halftorus(r=1, R=2, l0=1, l1=2, n=24, m=36, glue=True, tol=1e-6):
+def get_halftorus(r=1, R=2, l0=1, l1=2, n=24, m=36, glue=True, add_points: int=0, tol=1e-6):
     """
     """
     phi = np.arange(n)/(n - 1)*np.pi
@@ -233,6 +233,15 @@ def get_halftorus(r=1, R=2, l0=1, l1=2, n=24, m=36, glue=True, tol=1e-6):
         disk_border_idx = np.argwhere(abs(np.linalg.norm(vertices, axis=1) - r) < tol).ravel()
         disk_border_idx = np.append(disk_border_idx, n*m + m//2)
         disk_border_idx = np.append(disk_border_idx, n*m + m + m//2)
+
+        # add points into the gluing disk
+        if add_points > 0:
+            new_vertices = np.random.random(size=[add_points, 3])
+            new_vertices[:, 0] = -r + 2*r*new_vertices[:, 0]
+            new_vertices[:, 1] = -l1 + new_vertices[:, 1]*(l1 + (r**2 - new_vertices[:, 0]**2)**0.5)
+            new_vertices[:, 2] = 0
+            disk_border_idx = np.concatenate([disk_border_idx, vertices.shape[0] + np.arange(add_points)])
+            vertices = np.concatenate([vertices, new_vertices])
         
         disk_border_pts = vertices[disk_border_idx]
         disk_border_pts = disk_border_pts[:, [0, 1]]
@@ -247,12 +256,13 @@ def get_halftorus(r=1, R=2, l0=1, l1=2, n=24, m=36, glue=True, tol=1e-6):
     return vertices, faces
 
 
-def get_halftori_bouquet(leaves=3, r=1, R=2, l0=1, n=6, m=6, glue=True, tol=1e-6):
+def get_halftori_bouquet(leaves=3, r=1, R=2, l0=1, n=6, m=6, glue=True, add_points=0, tol=1e-6):
     l1 = l0 + r/np.tan(np.pi/leaves)
 
-    vertices0, faces0 = get_halftorus(r, R, l0, l1, n, m, glue, tol)
+    vertices0, faces0 = get_halftorus(r, R, l0, l1, n, m, glue, add_points, tol)
     vertices, faces = vertices0.copy(), faces0.copy()
     for i in range(1, leaves):
+        vertices0, faces0 = get_halftorus(r, R, l0, l1, n, m, glue, add_points, tol)
         angle = i * (2 * np.pi / leaves)
         rotated_vertices = rotate_over_x(vertices0, angle)
         vertices, faces, _ = merge_meshes_with_weld(vertices, faces, rotated_vertices, faces0, tol)

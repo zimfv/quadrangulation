@@ -100,11 +100,21 @@ class MorseSmale:
             elif (neighbors_gradients < 0).all():
                 self.maxs.append(node)
             else:
-                graph_lower_neighborhood = self.edge_graph.subgraph(neighbors[neighbors_gradients < 0])
-                graph_higher_neighborhood = self.edge_graph.subgraph(neighbors[neighbors_gradients > 0])
-                regular = nx.is_connected(graph_lower_neighborhood) and nx.is_connected(graph_higher_neighborhood)
-                if not regular:
-                    self.saddles.append(node)
+                try:
+                    graph_lower_neighborhood = self.edge_graph.subgraph(neighbors[neighbors_gradients < 0])
+                    graph_higher_neighborhood = self.edge_graph.subgraph(neighbors[neighbors_gradients > 0])
+                    regular = nx.is_connected(graph_lower_neighborhood) and nx.is_connected(graph_higher_neighborhood)
+                    if not regular:
+                        self.saddles.append(node)
+                except Exception as err:
+                    import matplotlib.pyplot as plt
+                    fig, axs = plt.subplots(1, 2, figsize=(10, 5))
+                    axs[0].set_title('Lower Neighborhood')
+                    axs[1].set_title('Higher Neighborhood')
+                    nx.draw_networkx(graph_lower_neighborhood, ax=axs[0])
+                    nx.draw_networkx(graph_higher_neighborhood, ax=axs[1])
+                    plt.show()
+                    raise err
     
     def iterate_saddles_and_increasing_directions(self):
         """
