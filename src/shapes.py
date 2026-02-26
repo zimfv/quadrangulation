@@ -145,7 +145,8 @@ def get_couple_linked_tori(n0, n1, r0=0.5, r1=0.5):
     return linked_tori_vertices, linked_tori_faces
 
 
-def get_halftorus(r=1, R=2, l0=1, l1=2, n=24, m=36, glue=True, add_points: int=0, tol=1e-6):
+def get_halftorus(r=1, R=2, l0=1, l1=2, n=24, m=36, 
+                  glue=True, extra_points_on_edge: int=0, extra_points_on_disk: int=0, tol=1e-6):
     """
     """
     phi = np.arange(n)/(n - 1)*np.pi
@@ -226,28 +227,40 @@ def get_halftorus(r=1, R=2, l0=1, l1=2, n=24, m=36, glue=True, add_points: int=0
 
     vertices = np.concatenate([vertices, vertices_extra], axis=0)
     faces    = np.concatenate([faces, faces_extra], axis=0)
+    
 
 
     if glue:
         # glue the hole
-        disk_border_idx = np.argwhere(abs(np.linalg.norm(vertices, axis=1) - r) < tol).ravel()
-        disk_border_idx = np.append(disk_border_idx, n*m + m//2)
-        disk_border_idx = np.append(disk_border_idx, n*m + m + m//2)
+        disk_idx = np.argwhere(abs(np.linalg.norm(vertices, axis=1) - r) < tol).ravel()
+        disk_idx = np.append(disk_idx, n*m + m//2)
+        disk_idx = np.append(disk_idx, n*m + m + m//2)
 
         # add points into the gluing disk
-        if add_points > 0:
-            new_vertices = np.random.random(size=[add_points, 3])
+        if extra_points_on_disk > 0:
+            new_vertices = np.random.random(size=[extra_points_on_disk, 3])
             new_vertices[:, 0] = -r + 2*r*new_vertices[:, 0]
             new_vertices[:, 1] = -l1 + new_vertices[:, 1]*(l1 + (r**2 - new_vertices[:, 0]**2)**0.5)
             new_vertices[:, 2] = 0
-            disk_border_idx = np.concatenate([disk_border_idx, vertices.shape[0] + np.arange(add_points)])
+            disk_idx = np.concatenate([disk_idx, vertices.shape[0] + np.arange(extra_points_on_disk)])
             vertices = np.concatenate([vertices, new_vertices])
         
-        disk_border_pts = vertices[disk_border_idx]
-        disk_border_pts = disk_border_pts[:, [0, 1]]
+        # add points into the disk boundary edge
+        if extra_points_on_edge > 0:
+            new_vertices = np.zeros([extra_points_on_edge, 3])
+            new_vertices[:, 0] = -r + 2*r*np.linspace(0, 1, extra_points_on_edge + 2)[1: -1]
+            new_vertices[:, 1] = -l1
+            disk_idx = np.concatenate([disk_idx, vertices.shape[0] + np.arange(extra_points_on_edge)])
+            vertices = np.concatenate([vertices, new_vertices])
+        
+        disk_pts = vertices[disk_idx]
+        disk_pts = disk_pts[:, [0, 1]]
 
-        disk_triangulation_local = sp.spatial.Delaunay(disk_border_pts, furthest_site=False, qhull_options="QJ").simplices
-        disk_triangulation_global = disk_border_idx[disk_triangulation_local]
+        if extra_points_on_edge > 0:
+            disk_triangulation_local = sp.spatial.Delaunay(disk_pts, qhull_options="Qt Qbb Qz").simplices
+        else:
+            disk_triangulation_local = sp.spatial.Delaunay(disk_pts, furthest_site=False, qhull_options="QJ").simplices
+        disk_triangulation_global = disk_idx[disk_triangulation_local]
         faces = np.vstack([faces, disk_triangulation_global])
 
 
@@ -256,13 +269,13 @@ def get_halftorus(r=1, R=2, l0=1, l1=2, n=24, m=36, glue=True, add_points: int=0
     return vertices, faces
 
 
-def get_halftori_bouquet(leaves=3, r=1, R=2, l0=1, n=6, m=6, glue=True, add_points=0, tol=1e-6):
+def get_halftori_bouquet(leaves=3, r=1, R=2, l0=1, n=6, m=6, glue=True, extra_points_on_edge: int=0, extra_points_on_disk: int=0, tol=1e-6):
     l1 = l0 + r/np.tan(np.pi/leaves)
-
-    vertices0, faces0 = get_halftorus(r, R, l0, l1, n, m, glue, add_points, tol)
-    vertices, faces = vertices0.copy(), faces0.copy()
-    for i in range(1, leaves):
-        vertices0, faces0 = get_halftorus(r, R, l0, l1, n, m, glue, add_points, tol)
+    vertices, faces = np.zeros(shape=[0, 3], dtype=float), np.zeros(shape=[0, 3], dtype=int)
+    for i in range(0, leaves):
+        vertices0, faces0 = get_halftorus(r, R, l0, l1, n, m, glue=glue, 
+                                          extra_points_on_edge=extra_points_on_edge, 
+                                          extra_points_on_disk=extra_points_on_disk, tol=tol)
         angle = i * (2 * np.pi / leaves)
         rotated_vertices = rotate_over_x(vertices0, angle)
         vertices, faces, _ = merge_meshes_with_weld(vertices, faces, rotated_vertices, faces0, tol)
