@@ -95,26 +95,24 @@ class MorseSmale:
         for node in range(self.n_vertices):
             neighbors = np.array(list(self.edge_graph.neighbors(node)))
             neighbors_gradients = self.gradient(node, neighbors) 
+            if (neighbors_gradients == 0).any():
+                graph = self.edge_graph.subgraph(np.append(neighbors, node))
+                node_colors = np.array(['green' if n == node else 'grey' for n in graph.nodes()])
+                node_colors[self.gradient(node, list(graph.nodes())) < 0] = 'blue'
+                node_colors[self.gradient(node, list(graph.nodes())) > 0] = 'red'
+                nx.draw_networkx(graph, node_color=node_colors, pos = nx.kamada_kawai_layout(graph))
+                raise ValueError('Zero Gradient Edge!')
+
             if (neighbors_gradients > 0).all():
                 self.mins.append(node)
             elif (neighbors_gradients < 0).all():
                 self.maxs.append(node)
             else:
-                try:
-                    graph_lower_neighborhood = self.edge_graph.subgraph(neighbors[neighbors_gradients < 0])
-                    graph_higher_neighborhood = self.edge_graph.subgraph(neighbors[neighbors_gradients > 0])
-                    regular = nx.is_connected(graph_lower_neighborhood) and nx.is_connected(graph_higher_neighborhood)
-                    if not regular:
-                        self.saddles.append(node)
-                except Exception as err:
-                    import matplotlib.pyplot as plt
-                    fig, axs = plt.subplots(1, 2, figsize=(10, 5))
-                    axs[0].set_title('Lower Neighborhood')
-                    axs[1].set_title('Higher Neighborhood')
-                    nx.draw_networkx(graph_lower_neighborhood, ax=axs[0])
-                    nx.draw_networkx(graph_higher_neighborhood, ax=axs[1])
-                    plt.show()
-                    raise err
+                graph_lower_neighborhood = self.edge_graph.subgraph(neighbors[neighbors_gradients < 0])
+                graph_higher_neighborhood = self.edge_graph.subgraph(neighbors[neighbors_gradients > 0])
+                regular = nx.is_connected(graph_lower_neighborhood) and nx.is_connected(graph_higher_neighborhood)
+                if not regular:
+                    self.saddles.append(node)
     
     def iterate_saddles_and_increasing_directions(self):
         """

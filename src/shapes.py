@@ -145,8 +145,8 @@ def get_couple_linked_tori(n0, n1, r0=0.5, r1=0.5):
     return linked_tori_vertices, linked_tori_faces
 
 
-def get_halftorus(r=1, R=2, l0=1, l1=2, n=24, m=36, 
-                  glue=True, extra_points_on_edge: int=0, extra_points_on_disk: int=0, tol=1e-6):
+def get_halftorus(r=1, R=2, l0=1, l1=2, n=24, m=36, glue=True, 
+                  extra_points_on_edge: int=0, extra_points_on_disk: int=0, regular_on_disk: bool=True, tol=1e-6):
     """
     """
     phi = np.arange(n)/(n - 1)*np.pi
@@ -238,7 +238,23 @@ def get_halftorus(r=1, R=2, l0=1, l1=2, n=24, m=36,
 
         # add points into the gluing disk
         if extra_points_on_disk > 0:
-            new_vertices = np.random.random(size=[extra_points_on_disk, 3])
+            if regular_on_disk:
+                n_cols = int(extra_points_on_disk**0.5)
+                n_rows = extra_points_on_disk//n_cols
+                n_last = extra_points_on_disk - n_cols*n_rows
+                x = np.linspace(0, 1, n_cols + 2)[1:-1]
+                y = np.linspace(0, 1, n_rows + (n_last > 0) + 2)[1:-1-(n_last > 0)]
+                x, y = np.meshgrid(x, y)
+                x = x.ravel()
+                y = y.ravel()
+                if n_last > 0:
+                    x = np.concatenate([x, (np.arange(n_last) + 0.5*(n_cols - n_last + 1))/n_cols])
+                    y = np.concatenate([y, 1 - 0.5/n_cols*np.ones(n_last)])
+                new_vertices = np.zeros([extra_points_on_disk, 3])
+                new_vertices[:, 0] = x
+                new_vertices[:, 1] = y
+            else:
+                new_vertices = np.random.random(size=[extra_points_on_disk, 3])
             new_vertices[:, 0] = -r + 2*r*new_vertices[:, 0]
             new_vertices[:, 1] = -l1 + new_vertices[:, 1]*(l1 + (r**2 - new_vertices[:, 0]**2)**0.5)
             new_vertices[:, 2] = 0
@@ -269,12 +285,13 @@ def get_halftorus(r=1, R=2, l0=1, l1=2, n=24, m=36,
     return vertices, faces
 
 
-def get_halftori_bouquet(leaves=3, r=1, R=2, l0=1, n=6, m=6, glue=True, extra_points_on_edge: int=0, extra_points_on_disk: int=0, tol=1e-6):
+def get_halftori_bouquet(leaves=3, r=1, R=2, l0=1, n=6, m=6, glue=True, 
+                         extra_points_on_edge: int=0, regular_on_disk: bool=True, extra_points_on_disk: int=0, tol=1e-6):
     l1 = l0 + r/np.tan(np.pi/leaves)
     vertices, faces = np.zeros(shape=[0, 3], dtype=float), np.zeros(shape=[0, 3], dtype=int)
     for i in range(0, leaves):
         vertices0, faces0 = get_halftorus(r, R, l0, l1, n, m, glue=glue, 
-                                          extra_points_on_edge=extra_points_on_edge, 
+                                          extra_points_on_edge=extra_points_on_edge, regular_on_disk=regular_on_disk, 
                                           extra_points_on_disk=extra_points_on_disk, tol=tol)
         angle = i * (2 * np.pi / leaves)
         rotated_vertices = rotate_over_x(vertices0, angle)
