@@ -86,33 +86,32 @@ class MorseSmale:
         """
         if (hasattr(self, 'mins') and hasattr(self, 'maxs') and hasattr(self, 'saddles')):
             return None
-
-        self.get_edge_graph()
-
+        
         self.mins = []
         self.maxs = []
         self.saddles = []
         for node in range(self.n_vertices):
-            neighbors = np.array(list(self.edge_graph.neighbors(node)))
-            neighbors_gradients = self.gradient(node, neighbors) 
-            if (neighbors_gradients == 0).any():
-                graph = self.edge_graph.subgraph(np.append(neighbors, node))
-                node_colors = np.array(['green' if n == node else 'grey' for n in graph.nodes()])
-                node_colors[self.gradient(node, list(graph.nodes())) < 0] = 'blue'
-                node_colors[self.gradient(node, list(graph.nodes())) > 0] = 'red'
-                nx.draw_networkx(graph, node_color=node_colors, pos = nx.kamada_kawai_layout(graph))
-                raise ValueError('Zero Gradient Edge!')
-
-            if (neighbors_gradients > 0).all():
+            neighborhood_faces = self.faces[(self.faces == node).any(axis=1)]
+            neighborhood_edges = neighborhood_faces[neighborhood_faces != node].reshape(-1, 2)
+            neighborhood_nodes = np.unique(neighborhood_edges)
+            neighborhood_grads = self.gradient(node, neighborhood_nodes)
+            if (neighborhood_grads > 0).all():
                 self.mins.append(node)
-            elif (neighbors_gradients < 0).all():
+            elif (neighborhood_grads < 0).all():
                 self.maxs.append(node)
             else:
-                graph_lower_neighborhood = self.edge_graph.subgraph(neighbors[neighbors_gradients < 0])
-                graph_higher_neighborhood = self.edge_graph.subgraph(neighbors[neighbors_gradients > 0])
+                graph_neighborhood = nx.Graph()
+                graph_neighborhood.add_nodes_from(neighborhood_nodes)
+                graph_neighborhood.add_edges_from(neighborhood_edges)
+                graph_lower_neighborhood = graph_neighborhood.subgraph(neighborhood_nodes[neighborhood_grads < 0])
+                graph_higher_neighborhood = graph_neighborhood.subgraph(neighborhood_nodes[neighborhood_grads > 0])
                 regular = nx.is_connected(graph_lower_neighborhood) and nx.is_connected(graph_higher_neighborhood)
                 if not regular:
                     self.saddles.append(node)
+                
+
+
+
     
     def iterate_saddles_and_increasing_directions(self):
         """
@@ -122,9 +121,9 @@ class MorseSmale:
         except AttributeError:
             self.define_critical_points()
         for saddle in self.saddles:
-            neighbors = np.array(list(self.edge_graph.neighbors(saddle)))
+            neighbors = np.array(list(self.get_edge_graph().neighbors(saddle)))
             neighbors_gradients = self.gradient(saddle, neighbors) 
-            graph_higher_neighborhood = self.edge_graph.subgraph(neighbors[neighbors_gradients > 0])
+            graph_higher_neighborhood = self.get_edge_graph().subgraph(neighbors[neighbors_gradients > 0])
             for component in nx.connected_components(graph_higher_neighborhood):
                 next_node = list(component)[self.gradient(saddle, list(component)).argmax()]
                 yield (saddle, next_node)
