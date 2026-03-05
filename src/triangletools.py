@@ -77,3 +77,15 @@ def get_faces_components(faces):
     g.add_nodes_from(range(faces.shape[0]))
     g.add_edges_from([(i, j) for i, j in itertools.combinations(range(faces.shape[0]), 2) if np.intersect1d(faces[i], faces[j]).size == 2])
     return  list(map(lambda i: faces[list(i)], nx.connected_components(g)))
+
+
+def get_neighborhood_graph(faces, center, with_center=False):
+    """
+    """
+    neighborhood_faces = faces[(faces == center).any(axis=1)]
+    neighborhood_edges = neighborhood_faces[neighborhood_faces != center].reshape(-1, 2)
+    neighborhood_graph = nx.Graph()
+    neighborhood_graph.add_edges_from(neighborhood_edges)
+    if with_center:
+        neighborhood_graph.add_edges_from([(center, node) for node in neighborhood_graph.nodes()])
+    return neighborhood_graph

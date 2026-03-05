@@ -109,9 +109,6 @@ class MorseSmale:
                 if not regular:
                     self.saddles.append(node)
                 
-
-
-
     
     def iterate_saddles_and_increasing_directions(self):
         """
@@ -121,9 +118,13 @@ class MorseSmale:
         except AttributeError:
             self.define_critical_points()
         for saddle in self.saddles:
-            neighbors = np.array(list(self.get_edge_graph().neighbors(saddle)))
-            neighbors_gradients = self.gradient(saddle, neighbors) 
-            graph_higher_neighborhood = self.get_edge_graph().subgraph(neighbors[neighbors_gradients > 0])
+            #neighbors = np.array(list(self.get_edge_graph().neighbors(saddle)))
+            #neighbors_gradients = self.gradient(saddle, neighbors) 
+            #graph_higher_neighborhood = self.get_edge_graph().subgraph(neighbors[neighbors_gradients > 0])
+            neighborhood_graph = triangletools.get_neighborhood_graph(self.faces, saddle, with_center=False)
+            neighbors = np.array(list(neighborhood_graph.nodes()))
+            neighbors_gradients = self.gradient(saddle, neighbors)
+            graph_higher_neighborhood = neighborhood_graph.subgraph(neighbors[neighbors_gradients > 0])
             for component in nx.connected_components(graph_higher_neighborhood):
                 next_node = list(component)[self.gradient(saddle, list(component)).argmax()]
                 yield (saddle, next_node)
@@ -135,10 +136,15 @@ class MorseSmale:
             self.saddles
         except AttributeError:
             self.define_critical_points()
+        
         for saddle in self.saddles:
-            neighbors = np.array(list(self.edge_graph.neighbors(saddle)))
-            neighbors_gradients = self.gradient(saddle, neighbors) 
-            graph_lower_neighborhood = self.edge_graph.subgraph(neighbors[neighbors_gradients < 0])
+            #neighbors = np.array(list(self.edge_graph.neighbors(saddle)))
+            #neighbors_gradients = self.gradient(saddle, neighbors) 
+            #graph_lower_neighborhood = self.edge_graph.subgraph(neighbors[neighbors_gradients < 0])
+            neighborhood_graph = triangletools.get_neighborhood_graph(self.faces, saddle, with_center=False)
+            neighbors = np.array(list(neighborhood_graph.nodes()))
+            neighbors_gradients = self.gradient(saddle, neighbors)
+            graph_lower_neighborhood = neighborhood_graph.subgraph(neighbors[neighbors_gradients < 0])
             for component in nx.connected_components(graph_lower_neighborhood):
                 next_node = list(component)[self.gradient(saddle, list(component)).argmin()]
                 yield (saddle, next_node)
@@ -149,10 +155,12 @@ class MorseSmale:
         for saddle, next_node in self.iterate_saddles_and_increasing_directions():
             path = graph_methods.get_chain_from(self.get_increasing_graph(), next_node)
             path = np.append(saddle, path)
+            #print('Increasing path:', path[[0, 1, -1]])
             yield path
         for saddle, next_node in self.iterate_saddles_and_decreasing_directions():
             path = graph_methods.get_chain_from(self.get_decreasing_graph(), next_node)
             path = np.append(saddle, path)
+            #print('Decreasing path:', path[[0, 1, -1]])
             yield path
 
     def get_paths(self):
@@ -323,10 +331,10 @@ class MorseSmale:
         return g_paths
     
 
-    def get_paths_graph_after_cancellations(self) -> nx.MultiGraph:
+    def get_paths_graph_after_cancellations(self, protected_saddles=[]) -> nx.MultiGraph:
         """
         """
-        g_simplifyed = simplify_graph(self.get_paths_graph(), self.values)
+        g_simplifyed = simplify_graph(self.get_paths_graph(), self.values, protected_saddles=protected_saddles)
         
         return g_simplifyed
 

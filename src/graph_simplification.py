@@ -27,7 +27,7 @@ def concatenate_paths(path0, path1):
     raise ValueError("Paths do not share endpoints.")
 
 
-def make_cancellation(graph: nx.MultiGraph, values, node0, node1=None):
+def make_cancellation(graph: nx.MultiGraph, values, node0, node1=None, protected_saddles=[]):
     """
     Makes the cancellation of birth-death pair in the paths graph.
 
@@ -51,9 +51,11 @@ def make_cancellation(graph: nx.MultiGraph, values, node0, node1=None):
     if (graph.degree(node0) not in [1, 2]) or (graph.nodes[node0].get('critical_type') not in ['min', 'max']):
         raise ValueError('node0 expect to be an index of local maxima or minima degree 1 or 2.')
     if node1 is None:
-        neighbors = list(graph.neighbors(node0))
+        neighbors = np.array(list(graph.neighbors(node0)))
+        neighbors = neighbors[~np.isin(neighbors, protected_saddles)]
         neighbors_vals = np.array([values[node] for node in neighbors])
         node1 = neighbors[np.argmin(abs(neighbors_vals - values[node0]))]
+
     if graph.nodes[node1].get('critical_type') != 'saddle':
         raise ValueError('node1 expect to be an index of saddle')
     
@@ -77,20 +79,25 @@ def make_cancellation(graph: nx.MultiGraph, values, node0, node1=None):
 
         return graph_after
     
+    if graph.degree(node1) == 3:
+        graph_after = graph.copy()
+        graph_after.remove_nodes_from([node0, node1])
+
+        return graph_after
+
     else:
         graph_after = graph.copy()
         
+    raise ValueError(f'Not yet solved case with the monkey saddle index {node1}')
 
-    raise ValueError('Not yet solved case with a monkey saddle')
 
-
-def simplify_graph(graph: nx.MultiGraph, values):
+def simplify_graph(graph: nx.MultiGraph, values, protected_saddles=[]):
     """
     """
     graph_after = graph.copy()
     wrong_nodes = [node for node in graph_after.nodes() if graph_after.degree(node) in [1, 2]]
     while len(wrong_nodes) > 0:
-        graph_after = make_cancellation(graph_after, values, wrong_nodes[0])
+        graph_after = make_cancellation(graph_after, values, wrong_nodes[0], protected_saddles=protected_saddles)
         wrong_nodes = [node for node in graph_after.nodes() if graph_after.degree(node) in [1, 2]]
 
     return graph_after

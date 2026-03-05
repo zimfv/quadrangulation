@@ -123,6 +123,7 @@ def get_steepest_increasing_graph(edge_graph, gradient_function, **kwargs):
     for node in edge_graph.nodes():
         neighbors = list(edge_graph.neighbors(node))
         grad_vals = gradient_function(node, neighbors)
+        #print(node, neighbors, grad_vals, neighbors[grad_vals.argmax()])
         if (grad_vals > 0).any():
             increasing_graph.add_edge(node, neighbors[grad_vals.argmax()])
     return increasing_graph
