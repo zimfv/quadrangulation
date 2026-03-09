@@ -91,14 +91,16 @@ def make_cancellation(graph: nx.MultiGraph, values, node0, node1=None, protected
     raise ValueError(f'Not yet solved case with the monkey saddle index {node1}')
 
 
-def simplify_graph(graph: nx.MultiGraph, values, protected_saddles=[]):
+def simplify_graph(graph: nx.MultiGraph, values, protected_nodes=[]):
     """
     """
     graph_after = graph.copy()
-    wrong_nodes = [node for node in graph_after.nodes() if graph_after.degree(node) in [1, 2]]
+    wrong_nodes = [node for node in graph_after.nodes() if (graph_after.degree(node) in [1, 2]) and not (node in protected_nodes)]
     while len(wrong_nodes) > 0:
-        graph_after = make_cancellation(graph_after, values, wrong_nodes[0], protected_saddles=protected_saddles)
-        wrong_nodes = [node for node in graph_after.nodes() if graph_after.degree(node) in [1, 2]]
+        #print('graph_after degrees:', {node: graph_after.degree(node) for node in graph_after.nodes()})
+        #print('wrong_nodes:', wrong_nodes)
+        graph_after = make_cancellation(graph_after, values, wrong_nodes[0], protected_saddles=protected_nodes)
+        wrong_nodes = [node for node in graph_after.nodes() if (graph_after.degree(node) in [1, 2]) and not (node in protected_nodes)]
 
     return graph_after
 

@@ -331,10 +331,10 @@ class MorseSmale:
         return g_paths
     
 
-    def get_paths_graph_after_cancellations(self, protected_saddles=[]) -> nx.MultiGraph:
+    def get_paths_graph_after_cancellations(self, protected_nodes=[]) -> nx.MultiGraph:
         """
         """
-        g_simplifyed = simplify_graph(self.get_paths_graph(), self.values, protected_saddles=protected_saddles)
+        g_simplifyed = simplify_graph(self.get_paths_graph(), self.values, protected_nodes=protected_nodes)
         
         return g_simplifyed
 
