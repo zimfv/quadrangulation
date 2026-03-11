@@ -261,17 +261,20 @@ class MorseSmale:
         return dist
     
     
-    def get_surrounding_disks_face_indices(self, chain, weight_function='area', max_distance=np.inf):
+    def get_surrounding_disks_face_indices(self, chain, weight_function='area', max_distance=np.inf, ignore_disk_condition=True):
         """
         """
         face_distances = self.get_face_distances_from_chain(chain, weight_function)
         face_order = np.argsort(face_distances)
-        face_add_status = np.zeros_like(face_order, dtype=bool)
-        face_add_status[face_distances == 0] = True
         #for i in face_order:
-        for i in face_order[face_distances <= max_distance]:
-            if triangletools.is_homotopy_preserving_face_addition(self.faces[face_add_status], self.faces[i]):
-                face_add_status[i] = True
+        if ignore_disk_condition:
+            face_add_status = np.ones_like(face_order, dtype=bool)
+        else:
+            face_add_status = np.zeros_like(face_order, dtype=bool)
+            face_add_status[face_distances == 0] = True
+            for i in face_order[face_distances <= max_distance]:
+                if triangletools.is_homotopy_preserving_face_addition(self.faces[face_add_status], self.faces[i]):
+                    face_add_status[i] = True
         surrounding_disks_face_indices = np.argwhere(face_add_status & (face_distances <= max_distance)).reshape(-1)
         
         return surrounding_disks_face_indices
@@ -340,16 +343,19 @@ class MorseSmale:
 
 
 
-    def get_geodesics_graph(self, weight_function='area', max_distance=np.inf, simplify=True) -> nx.MultiGraph:
+    def get_geodesics_graph(self, weight_function='area', max_distance=np.inf, simplify=True, protected_nodes=[]) -> nx.MultiGraph:
         """
         """
         if simplify:
-            g = self.get_paths_graph_after_cancellations()
+            g = self.get_paths_graph_after_cancellations(protected_nodes=protected_nodes)
         else:
             g = self.get_paths_graph()
         
         for u, v, key, data in g.edges(keys=True, data=True):
-            data["geopath"] = self.get_geodesic_homotopic_to_edge_chain(data["path"], weight_function, max_distance, with_distance=False)
+            if np.isin(data['path'], protected_nodes).all():
+                data["geopath"] = self.vertices[data["path"]]
+            else:
+                data["geopath"] = self.get_geodesic_homotopic_to_edge_chain(data["path"], weight_function, max_distance, with_distance=False)
         return g
 
         
