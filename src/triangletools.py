@@ -1,7 +1,7 @@
 import itertools
 import numpy as np
 import networkx as nx
-
+import igl
 
 def compact_mesh(V, F):
     """
@@ -89,3 +89,49 @@ def get_neighborhood_graph(faces, center, with_center=False):
     if with_center:
         neighborhood_graph.add_edges_from([(center, node) for node in neighborhood_graph.nodes()])
     return neighborhood_graph
+
+
+def merging_paths_intersects(path0, path1, faces):
+    """
+    Returns True if 2 merging edge paths intersect 
+    """
+    if np.intersect1d(path0, path1).size == 0:
+        raise ValueError(f'Paths does not merge.')
+    if len(np.unique([path0[[0, -1]], path1[[0, -1]]])) != 4:
+        raise ValueError(f'Paths does not merge in the middle.')
+
+    # detect the disk arround paths
+    faces_new = faces[np.isin(faces, np.concatenate([path0, path1])).any(axis=1)]
+    #faces_new = faces[(np.isin(faces, np.concatenate([path0, path1])).sum(axis=1) > 1) | np.isin(faces, np.concatenate([path0[1:-1], path1[1:-1]])).any(axis=1)]
+    faces_new = faces_new[~((np.isin(faces_new, np.concatenate([path0, path1])).sum(axis=1) == 1) & np.isin(faces_new, np.concatenate([path0[[0, -1]], path1[[0, -1]]])).any(axis=1)) ]
+    
+    edges = np.concatenate(faces_new[:, [[0, 1], [0, 2], [1, 2]]])
+
+    g = nx.Graph()
+    g.add_edges_from(edges)
+
+    #import matplotlib.pyplot as plt
+    #fig, axs = plt.subplots(1, 2, figsize=(12, 6))
+    #fig.suptitle(f'path0: {path0}\npath1: {path1}')
+    #nx.draw_networkx(g, with_labels=True, pos=nx.kamada_kawai_layout(g), ax=axs[0])
+
+    # cut the disk by path0
+    g.remove_nodes_from(path0)
+
+    print('path0:', path0)
+    print('path1:', path1)
+
+    #nx.draw_networkx(g, with_labels=True, pos=nx.kamada_kawai_layout(g), ax=axs[1])
+    #plt.show()
+
+    # check if the ends of path1 in one connected component
+    try:
+        shortest_path = nx.shortest_path(g, path1[0], path1[-1])
+        print('Intersect', False, 'shortest_path:', shortest_path)
+        return False
+    except nx.NetworkXNoPath:
+        print('Intersect', True)
+        return True
+
+    
+    

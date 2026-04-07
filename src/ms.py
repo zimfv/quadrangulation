@@ -149,26 +149,81 @@ class MorseSmale:
                 next_node = list(component)[self.gradient(saddle, list(component)).argmin()]
                 yield (saddle, next_node)
         
-    def iterate_paths(self):
-        """
-        """
-        for saddle, next_node in self.iterate_saddles_and_increasing_directions():
-            path = graph_methods.get_chain_from(self.get_increasing_graph(), next_node)
-            path = np.append(saddle, path)
-            #print('Increasing path:', path[[0, 1, -1]])
-            yield path
-        for saddle, next_node in self.iterate_saddles_and_decreasing_directions():
-            path = graph_methods.get_chain_from(self.get_decreasing_graph(), next_node)
-            path = np.append(saddle, path)
-            #print('Decreasing path:', path[[0, 1, -1]])
-            yield path
 
-    def get_paths(self):
+    def get_paths(self, fix_incorrect_paths=True):
         """
         """
         if not hasattr(self, 'paths'):
-            self.paths = list(self.iterate_paths())
+            self.paths = []
+            for saddle, next_node in self.iterate_saddles_and_increasing_directions():
+                path = graph_methods.get_chain_from(self.get_increasing_graph(), next_node)
+                path = np.append(saddle, path)
+                self.paths.append(path)
+            for saddle, next_node in self.iterate_saddles_and_decreasing_directions():
+                path = graph_methods.get_chain_from(self.get_decreasing_graph(), next_node)
+                path = np.append(saddle, path)
+                self.paths.append(path)
+        
+
+            if fix_incorrect_paths:
+                def common_suffix(a, b):
+                    a = np.asarray(a)
+                    b = np.asarray(b)
+                    
+                    n = min(len(a), len(b))
+                    a_rev = a[-n:][::-1]
+                    b_rev = b[-n:][::-1]
+                    
+                    diff = np.flatnonzero(a_rev != b_rev)
+                    k = diff[0] if len(diff) else n
+                    
+                    return a[-k:] if k > 0 else np.array([])
+                
+                possibly_wrong_paths_indices = [i for i, path in enumerate(self.paths) if np.isin(path[1:-1], self.saddles).any()]
+                for i in possibly_wrong_paths_indices:
+                    path = self.paths[i]
+
+                    # this could work only in the case when there is only 1 intersection
+                    saddle = path[1:-1][np.isin(path[1:-1], self.saddles)][0]
+                    short_path = path[:list(path).index(saddle) + 1]
+                    print(f'short_path: {short_path}')
+                    if path[-1] in self.maxs:
+                        saddle_directions = [next_node for s, next_node in self.iterate_saddles_and_increasing_directions() if  s == saddle]
+                        saddle_counter_directions = [next_node for s, next_node in self.iterate_saddles_and_decreasing_directions() if  s == saddle]
+                        
+                        direction_graph = self.get_increasing_graph()
+                    else:
+                        saddle_directions = [next_node for s, next_node in self.iterate_saddles_and_decreasing_directions() if  s == saddle]
+                        saddle_counter_directions = [next_node for s, next_node in self.iterate_saddles_and_increasing_directions() if  s == saddle]
+                        direction_graph = self.get_decreasing_graph()
+                    saddle_counter_directions = np.setdiff1d(saddle_counter_directions, path)
+                    
+                    # possible path trajectories
+                    optional_paths = [graph_methods.get_chain_from(direction_graph, next_node) for next_node in saddle_directions]
+                    print('optional_paths:', optional_paths)
+                    optional_paths = [np.concatenate([short_path, optional_path]) for optional_path in optional_paths]
+                    print('optional_paths:', optional_paths)
+                    
+                    counter_paths = [counter_path[::-1] for counter_path in self.paths if counter_path[0] == saddle]
+                    counter_paths_merges = [common_suffix(counter_path, short_path) for counter_path in counter_paths]
+                    counter_path = counter_paths[np.argmax([len(counter_path_merged) for counter_path_merged in counter_paths_merges])]
+                    # the paths which should not be intersected
+                    constraining_paths = [np.append(counter_path, next_node) for next_node in saddle_counter_directions]
+                    print('constraining_paths:', constraining_paths)
+
+                    for optional_path in optional_paths:
+
+                        if not np.any([triangletools.merging_paths_intersects(optional_path, constraining_path, self.faces) for constraining_path in constraining_paths]):
+                            self.paths[i] = optional_path
+                            break
         return self.paths
+    
+    
+    def iterate_paths(self):
+        """
+        """
+        for path in self.get_paths():
+            yield path
 
     def get_face_graph(self):
         """
