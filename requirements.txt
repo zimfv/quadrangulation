@@ -1,0 +1,13 @@
+cvxpy>=1.5
+gpytoolbox>=0.3
+libigl>=2.5.0
+matplotlib>=3.9
+networkx>=3.3
+numpy>=1.26
+pandas>=2.2
+pygeodesic>=0.1.11
+PySCIPOpt==6.2.1
+pyvista[jupyter]>=0.44
+scipy>=1.13
+tqdm==4.67.1
+trimesh>=4.4

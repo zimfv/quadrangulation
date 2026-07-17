@@ -14,7 +14,41 @@ import warnings
 
 class MorseSmale:
     def __init__(self, faces, values, vertices=None, forest_method='steepest', gradient_respects_distance=False):
-        """
+        r"""
+        Initialize the 2-dimensional simplicilial complex with N vertices and M 2-faces to quadrangulate
+
+        Parameters:
+        -----------
+        faces: array shape (M, 3)
+            The list of 2-faces of the simplicial complex
+
+        values: array shape (N, )
+            The filtration values of the vertices
+        
+        vertices: array shape (N, d) or None
+            If the complex has an embeding in d-dimensional eucledean space, we can define the cords of the vertices
+
+        forest_method: str
+            ...
+            ``'steepest'``: ...
+            ``'spaning'``: ...
+        
+        gradient_respects_distance : bool
+            Determines how the gradient between the filtration values of two
+            adjacent vertices is computed.
+
+            If ``True``, the gradient is normalized by the Euclidean distance
+            between the vertices:
+
+            .. math::
+
+                \frac{f(v_1) - f(v_0)}{\lVert v_1 - v_0 \rVert}
+
+            Otherwise, the gradient is computed as the filtration value difference:
+
+            .. math::
+
+                f(v_1) - f(v_0)
         """
         self.faces = np.unique(np.sort(faces, axis=1), axis=0)
         self.values = np.array(values)
@@ -31,13 +65,16 @@ class MorseSmale:
     
         if forest_method.lower() == 'steepest':
             self._get_increasing_graph_method = graph_methods.get_steepest_increasing_graph
-        if forest_method.lower() == 'spaning':
+        elif forest_method.lower() == 'spaning':
             self._get_increasing_graph_method = graph_methods.get_spaning_increasing_graph
         
         self.gradient_respects_distance = gradient_respects_distance
 
     def distance(self, index0, index1):
         """
+        Return the distance between the vertices 2 vertices
+
+        If embedding is not defined then distance between any distinct vertices is 1
         """
         if self.vertices is not None:
             return np.linalg.norm(self.vertices[index1] - self.vertices[index0], axis=-1)
@@ -46,6 +83,7 @@ class MorseSmale:
 
     def gradient(self, index0, index1):
         """
+        Return the gradient between the filtration values of two adjacent vertices.
         """
         if self.gradient_respects_distance:
             val = (self.values[index1] - self.values[index0])/self.distance(index0, index1)
@@ -55,6 +93,11 @@ class MorseSmale:
     
     def get_edge_graph(self) -> nx.Graph:
         """
+        Return the 1-skeleton graph of the simplicial complex
+
+        Return:
+        -------
+        self.edge_graph : nx.Graph
         """
         if not hasattr(self, 'edge_graph'):
             self.edge_graph = nx.Graph()
@@ -65,6 +108,12 @@ class MorseSmale:
     
     def get_increasing_graph(self) -> nx.DiGraph:
         """
+        Return the directed graph: edges are from nodes to their maximum higher in the filtration neighbour.
+
+        Return:
+        -------
+        self.increasing_graph : nx.DiGraph
+            Directed subgraph of self.edge_graph
         """
         if not hasattr(self, 'increasing_graph'):
             self.increasing_graph = self._get_increasing_graph_method(self.get_edge_graph(), 
@@ -74,6 +123,12 @@ class MorseSmale:
 
     def get_decreasing_graph(self) -> nx.DiGraph:
         """
+        Return the directed graph: edges are from nodes to their minimum lower in the filtration neighbour.
+
+        Return:
+        -------
+        self.decreasing_graph : nx.DiGraph
+            Directed subgraph of self.edge_graph
         """
         if not hasattr(self, 'decreasing_graph'):
             self.decreasing_graph = self._get_increasing_graph_method(self.get_edge_graph(), 
@@ -83,6 +138,18 @@ class MorseSmale:
     
     def define_critical_points(self):
         """
+        Define critical points
+
+        Attributes:
+        -----------
+        mins: list
+            Indicises of local minimum vertices
+
+        maxs: list
+            Indicises of local maximum vertices
+            
+        saddles: list
+            Indicises of saddle vertices
         """
         if (hasattr(self, 'mins') and hasattr(self, 'maxs') and hasattr(self, 'saddles')):
             return None
@@ -112,10 +179,18 @@ class MorseSmale:
     
     def iterate_saddles_and_increasing_directions(self):
         """
+        Iterate the origins (first 2 nodes) of increasing path
+
+        Yields:
+        -------
+        saddle: int
+            The index of the 1st node in the increasing path
+            This is always a saddle
+
+        next_node: int
+            The index of the 2nd node in the increasing path
         """
-        try:
-            self.saddles
-        except AttributeError:
+        if not hasattr(self, 'saddles'):
             self.define_critical_points()
         for saddle in self.saddles:
             #neighbors = np.array(list(self.get_edge_graph().neighbors(saddle)))
@@ -131,10 +206,18 @@ class MorseSmale:
                 
     def iterate_saddles_and_decreasing_directions(self):
         """
+        Iterate the origins (first 2 nodes) of decreasing path
+
+        Yields:
+        -------
+        saddle: int
+            The index of the 1st node in the decreasing path
+            This is always a saddle
+
+        next_node: int
+            The index of the 2nd node in the decreasing path
         """
-        try:
-            self.saddles
-        except AttributeError:
+        if not hasattr(self, 'saddles'):
             self.define_critical_points()
         
         for saddle in self.saddles:
@@ -152,8 +235,22 @@ class MorseSmale:
 
     def get_paths(self, fix_incorrect_paths=True):
         """
+        Return list of paths: increasing (from sadles to local maxima) and decreasing (from saddles to local minima)
+
+        Parameters:
+        -----------
+        fix_incorrect_paths : bool
+            Fix incorrect crossing paths, which could appear if there is a saddle somewhere in the middle of the path
+
+        Returns:
+        --------
+        self.paths: list[np.array[int]]
+            List of paths, represented as arrays of consequtive vertex indices from saddles to local maxima/minima
         """
+        # FIXME: The second saddles along paths can generate path intersections
+        # TODO: Rewrite fixing incorrect paths
         if not hasattr(self, 'paths'):
+
             self.paths = []
             for saddle, next_node in self.iterate_saddles_and_increasing_directions():
                 path = graph_methods.get_chain_from(self.get_increasing_graph(), next_node)
@@ -163,7 +260,7 @@ class MorseSmale:
                 path = graph_methods.get_chain_from(self.get_decreasing_graph(), next_node)
                 path = np.append(saddle, path)
                 self.paths.append(path)
-        
+            
 
             if fix_incorrect_paths:
                 def common_suffix(a, b):
@@ -182,7 +279,7 @@ class MorseSmale:
                 possibly_wrong_paths_indices = [i for i, path in enumerate(self.paths) if np.isin(path[1:-1], self.saddles).any()]
                 for i in possibly_wrong_paths_indices:
                     path = self.paths[i]
-
+            
                     # this could work only in the case when there is only 1 intersection
                     saddle = path[1:-1][np.isin(path[1:-1], self.saddles)][0]
                     short_path = path[:list(path).index(saddle) + 1]
@@ -210,23 +307,38 @@ class MorseSmale:
                     # the paths which should not be intersected
                     constraining_paths = [np.append(counter_path, next_node) for next_node in saddle_counter_directions]
                     print('constraining_paths:', constraining_paths)
-
+            
                     for optional_path in optional_paths:
-
+            
                         if not np.any([triangletools.merging_paths_intersects(optional_path, constraining_path, self.faces) for constraining_path in constraining_paths]):
                             self.paths[i] = optional_path
                             break
         return self.paths
+        
     
     
     def iterate_paths(self):
         """
+        Iterate paths: increasing (from sadles to local maxima) and decreasing (from saddles to local minima)
+
+        Yield:
+        ------
+        path : np.array[int]
+            Paths represented as list of consequtive vertex indices from saddle to local maximum/minimum
         """
         for path in self.get_paths():
             yield path
 
+
     def get_face_graph(self):
         """
+        Return the face adjacency graph.
+
+        Returns:
+        --------
+        self.face_graph: nx.Graph
+            Nodes are indices of the faces
+            Edges exists between 2 nodes, if 2 coresponding faces share a common edge
         """
         if not hasattr(self, 'face_graph'):
             self.face_graph = nx.Graph()
@@ -237,9 +349,19 @@ class MorseSmale:
                     self.face_graph.add_edge(i0, i1, intersection=intersection)
         return self.face_graph.copy()
     
+
     def define_decomposition_by_paths(self):
         """
+        Defines which face is in which quadrangle
+
+        Returns:
+        --------
+        self.faces_components_by_paths: integer np.array length M
+            The indices are face indices
+            The values are quadrangle indices
         """
+        # FIXME: This method can split one quadrangle into many when increasing and deceasing paths intersect in one nodes
+        # TODO: There should be another solution (probably, without the face adjacency graph)
         if hasattr(self, 'faces_components_by_paths'):
             return self.faces_components_by_paths
         
@@ -274,8 +396,23 @@ class MorseSmale:
 
         return self.faces_components_by_paths
     
+
     def get_surrounding_faces(self, chain, level=0):
         """
+        Returns the indices of faces surrounding the chain
+
+        Parameters:
+        -----------
+        chain: np.array[int] or list[int]
+            The indices of the chain vertices
+
+        level: int
+            How far triangles from the chain we take
+
+        Returns:
+        --------
+        surrounding_faces: np.array[int]
+            The indices of the faces surrounding the chain.
         """
         faces_vertex_permutations = self.faces[:, [list(perm) for perm in itertools.permutations(range(3), 2)]][..., None]
         chain_edges = np.array([chain[:-1], chain[1:]])
@@ -287,6 +424,28 @@ class MorseSmale:
 
     def get_face_distances_from_chain(self, chain, weight_function='area'):
         """
+        Compute the distances of faces from the chain.
+        1. Defines the face adjacency graph
+        2. For each edge in this graph define the weight in the given way
+        3. Define the weighted path length as the distance
+
+        Parameters:
+        -----------
+        chain: np.array[int] or list[int]
+            The indices of the chain vertices
+
+        weight_function : str
+            The way how to compute the edge weight
+            ``'area'``: area of the quadrangle of centers of the faces and vertices of the common edge
+
+            ``'common-edge-length'``: the distance between vertices of the common edge
+
+            ``'centers-distance'``: the distance between centers of the faces (along the surface)
+
+        Returns:
+        --------
+        dist: np.array length M
+            The distance from the chain for each vertex
         """
         if type(weight_function) is str:
             if weight_function == 'area':
@@ -295,10 +454,17 @@ class MorseSmale:
                     c0 = self.vertices[face0].mean(axis=0)
                     c1 = self.vertices[face1].mean(axis=0)
                     return geometry.triangle_area(a, b, c0) + geometry.triangle_area(a, b, c1)
-            elif weight_function == 'length':
+            elif weight_function == 'common-edge-length':
                 def weight_function(face0, face1):
                     a, b = self.vertices[np.intersect1d(face0, face1)]
                     return np.linalg.norm(a - b)
+            if weight_function == 'centers-distance':
+                def weight_function(face0, face1):
+                    a, b = self.vertices[np.intersect1d(face0, face1)]
+                    m = 0.5*(a + b)
+                    c0 = self.vertices[face0].mean(axis=0)
+                    c1 = self.vertices[face1].mean(axis=0)
+                    return np.linalg.norm(c0 - m) + np.linalg.norm(c1 - m)
             else:
                 raise ValueError("Expected weight_function parameter be None, str from ['area', 'length'] or the function of 2 parameters")
         if weight_function is None:
@@ -307,7 +473,6 @@ class MorseSmale:
             def weight(u, v, *args, **kwargs):
                 return weight_function(self.faces[u], self.faces[v]) if u != v else 0
 
-        
         faces_vertex_permutations = self.faces[:, [list(perm) for perm in itertools.permutations(range(3), 2)]][..., None]
         chain_edges = np.array([chain[:-1], chain[1:]])
         surrounding_faces0 = np.argwhere((faces_vertex_permutations == chain_edges).all(axis=-2).any(axis=(-1, -2))).reshape(-1)
@@ -318,15 +483,41 @@ class MorseSmale:
     
     def get_surrounding_disks_face_indices(self, chain, weight_function='area', max_distance=np.inf, ignore_disk_condition=True):
         """
+        Returns the surrounding faces which is a (shellable) disk
+
+        Parameters:
+        -----------
+        chain: np.array[int] or list[int]
+            The indices of the chain vertices
+
+        weight_function : str
+            The way how to compute the edge weight
+            ``'area'``: area of the quadrangle of centers of the faces and vertices of the common edge
+
+            ``'common-edge-length'``: the distance between vertices of the common edge
+
+            ``'centers-distance'``: the distance between centers of the faces (along the surface)
+
+        max_distance : int or np.inf
+            The maximal distance from the chain
+
+        ignore_disk_condition : bool
+            If ``False`` there is no check that the surrounding area is homotopically equivalent to a disk.
+            This is incorrect, but much faster. Need for tests.
+
+        Returns:
+        --------
+        surrounding_disks_face_indices: np.array[int]
+
         """
         face_distances = self.get_face_distances_from_chain(chain, weight_function)
         face_order = np.argsort(face_distances)
-        #for i in face_order:
         if ignore_disk_condition:
             face_add_status = np.ones_like(face_order, dtype=bool)
         else:
             face_add_status = np.zeros_like(face_order, dtype=bool)
             face_add_status[face_distances == 0] = True
+            # shelling construction
             for i in face_order[face_distances <= max_distance]:
                 if triangletools.is_homotopy_preserving_face_addition(self.faces[face_add_status], self.faces[i]):
                     face_add_status[i] = True
@@ -337,6 +528,34 @@ class MorseSmale:
 
     def get_geodesic_homotopic_to_edge_chain(self, chain, weight_function='area', max_distance=np.inf, with_distance=False):
         """
+        Returns the geodesic, homotopic to a given chain
+
+        Parameters:
+        -----------
+        chain: np.array[int] or list[int]
+            The indices of the chain vertices
+
+        weight_function : str
+            The way how to compute the edge weight
+            ``'area'``: area of the quadrangle of centers of the faces and vertices of the common edge
+
+            ``'common-edge-length'``: the distance between vertices of the common edge
+
+            ``'centers-distance'``: the distance between centers of the faces (along the surface)
+
+        max_distance : int or np.inf
+            The maximal distance from the chain
+
+        with_distance: bool
+            if ``True`` also returns the length of the geodesic
+
+        Returns:
+        --------
+        geopath: np.array shape (:, D)
+            The consequtive vertices along the geodesic
+        
+        geo_distance: float
+            The length of geodesic
         """
         surrounding_disk_faces = self.faces[self.get_surrounding_disks_face_indices(chain, weight_function, max_distance)]
         
@@ -368,6 +587,31 @@ class MorseSmale:
 
     def iterate_geodesics_homotopic_to_paths(self, weight_function='area', max_distance=np.inf, with_distance=False):
         """
+        Iterate the geodesics, homotopic to paths
+
+        Parameters:
+        -----------
+        weight_function : str
+            The way how to compute the edge weight
+            ``'area'``: area of the quadrangle of centers of the faces and vertices of the common edge
+
+            ``'common-edge-length'``: the distance between vertices of the common edge
+
+            ``'centers-distance'``: the distance between centers of the faces (along the surface)
+
+        max_distance : int or np.inf
+            The maximal distance from the chain
+
+        with_distance: bool
+            if ``True`` also returns the length of the geodesic
+
+        Returns:
+        --------
+        geopath: np.array shape (:, D)
+            The consequtive vertices along the geodesic
+        
+        geo_distance: float
+            The length of geodesic
         """
         for path in self.get_paths():
             yield self.get_geodesic_homotopic_to_edge_chain(path, weight_function, max_distance, with_distance)
@@ -375,6 +619,19 @@ class MorseSmale:
 
     def get_paths_graph(self) -> nx.MultiGraph:
         """
+        Returns the graph relating the critical points and paths
+
+        Returns:
+        --------
+        g_paths: nx.MultiGraph
+            A multigraph where:
+
+            - Nodes are the vertex indices of critical points.
+            - Node attribute ``critical_type`` is one of
+            ``"min"``, ``"max"``, or ``"saddle"``.
+            - Each edge represents a path connecting two critical points.
+            - Edge attribute ``path`` contains a copy of the NumPy array of
+            vertex indices defining the path, including both endpoints.
         """
         self.define_critical_points()
 
@@ -391,6 +648,24 @@ class MorseSmale:
 
     def get_paths_graph_after_cancellations(self, protected_nodes=[]) -> nx.MultiGraph:
         """
+        Returns the graph relating the critical points and paths after cancellations
+
+        Parameters:
+        -----------
+        protected_nodes : list[int]
+            The nodes, which can't be canceled
+
+        Returns:
+        --------
+        g_paths : nx.MultiGraph
+            A multigraph where:
+
+            - Nodes are the vertex indices of critical points.
+            - Node attribute ``critical_type`` is one of
+            ``"min"``, ``"max"``, or ``"saddle"``.
+            - Each edge represents a path connecting two critical points.
+            - Edge attribute ``path`` contains a copy of the NumPy array of
+            vertex indices defining the path, including both endpoints.
         """
         g_simplifyed = simplify_graph(self.get_paths_graph(), self.values, protected_nodes=protected_nodes)
         
@@ -400,6 +675,38 @@ class MorseSmale:
 
     def get_geodesics_graph(self, weight_function='area', max_distance=np.inf, simplify=True, protected_nodes=[]) -> nx.MultiGraph:
         """
+
+        Parameters:
+        -----------
+        weight_function : str
+            The way how to compute the edge weight
+            ``'area'``: area of the quadrangle of centers of the faces and vertices of the common edge
+
+            ``'common-edge-length'``: the distance between vertices of the common edge
+
+            ``'centers-distance'``: the distance between centers of the faces (along the surface)
+
+        max_distance : int or np.inf
+            The maximal distance from the chain
+
+        simplify: bool
+            If ``True`` do cancellations
+            
+        protected_nodes : list[int]
+            The nodes, which can't be canceled
+        
+        Returns:
+        --------
+        g_paths : nx.MultiGraph
+            A multigraph where:
+
+            - Nodes are the vertex indices of critical points.
+            - Node attribute ``critical_type`` is one of
+            ``"min"``, ``"max"``, or ``"saddle"``.
+            - Each edge represents a path connecting two critical points.
+            - Edge attribute ``path`` contains a copy of the NumPy array of
+            vertex indices defining the path, including both endpoints.
+            - Edge attribute ``geopath`` contains a geodesic points homotopic to path.
         """
         if simplify:
             g = self.get_paths_graph_after_cancellations(protected_nodes=protected_nodes)
