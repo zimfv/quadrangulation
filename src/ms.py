@@ -106,6 +106,25 @@ class MorseSmale:
             self.edge_graph.add_edges_from(edges)
         return self.edge_graph.copy()
     
+    def get_face_graph(self):
+        """
+        Return the face adjacency graph.
+
+        Returns:
+        --------
+        self.face_graph: nx.Graph
+            Nodes are indices of the faces
+            Edges exists between 2 nodes, if 2 coresponding faces share a common edge
+        """
+        if not hasattr(self, 'face_graph'):
+            self.face_graph = nx.Graph()
+            self.face_graph.add_nodes_from(range(self.n_faces))
+            for (i0, face0), (i1, face1) in itertools.combinations(enumerate(self.faces), 2):
+                intersection = np.intersect1d(face0, face1)
+                if len(intersection) == 2:
+                    self.face_graph.add_edge(i0, i1, intersection=intersection)
+        return self.face_graph.copy()
+    
     def get_increasing_graph(self) -> nx.DiGraph:
         """
         Return the directed graph: edges are from nodes to their maximum higher in the filtration neighbour.
@@ -204,6 +223,7 @@ class MorseSmale:
                 next_node = list(component)[self.gradient(saddle, list(component)).argmax()]
                 yield (saddle, next_node)
                 
+
     def iterate_saddles_and_decreasing_directions(self):
         """
         Iterate the origins (first 2 nodes) of decreasing path
@@ -231,7 +251,93 @@ class MorseSmale:
             for component in nx.connected_components(graph_lower_neighborhood):
                 next_node = list(component)[self.gradient(saddle, list(component)).argmin()]
                 yield (saddle, next_node)
+    
+
+    def is_correct_saddle_on_path(self, path, saddle, other_paths=[]) -> bool:
+        """
+        Return True if the saddle on path has a correct direction out
         
+        Parameters:
+        -----------
+        path : np.array[int]
+
+        saddle: int
+
+        other_paths: list[np.array[int]]
+
+        Returns:
+        --------
+        path_turns_correctly: bool
+        """
+        if (saddle not in path[1:-1]) or (saddle not in self.saddles):
+            raise ValueError("saddle expected to be a not booundary saddle on the path")
+        
+        # get a structure of faces surrounding the saddle
+        surrounding_faces_indices = np.argwhere((self.faces == saddle).any(axis=1)).ravel()
+        print(f'surrounding_faces_indices: {surrounding_faces_indices}')
+        surrounding_faces_graph = self.get_face_graph().subgraph(nodes=surrounding_faces_indices).copy()
+
+        # path splits the faces surrounding the saddle into 2 halfspace
+        path_edges = np.sort(np.transpose([path[1:], path[:-1]]), axis=1)
+        graph_path_edges = [(e0, e1) for e0, e1, data in surrounding_faces_graph.edges(data=True) if (data['intersection'] == path_edges).all(axis=1).any()]
+        surrounding_faces_graph.remove_edges_from(graph_path_edges)
+        assert nx.number_connected_components(surrounding_faces_graph) <= 2
+        halfspace_graphs = [surrounding_faces_graph.subgraph(component).copy() for component in nx.connected_components(surrounding_faces_graph)]
+        
+        # split halfspaces by other paths
+        other_paths_edges = np.sort(np.transpose(np.hstack([[chain[1:], chain[:-1]] for chain in other_paths])), axis=1)
+        graph_other_path_edges = [(e0, e1) for e0, e1, data in surrounding_faces_graph.edges(data=True) if (data['intersection'] == other_paths_edges).all(axis=1).any()]
+        for i in range(len(halfspace_graphs)):
+            halfspace_graphs[i].remove_edges_from(graph_other_path_edges)
+        
+        # check if there is a halfspace not splited by other paths
+        halfspace_graph_splits = np.array([nx.number_connected_components(g) for g in halfspace_graphs])
+        path_turns_correctly = (halfspace_graph_splits == 1).any()
+        return path_turns_correctly
+
+
+    def iterate_incorrect_saddles_on_paths(self, paths=None, first=True):
+        """
+        ...
+
+        Yields:
+        --------
+        path_index: int
+
+        saddle: int
+        """
+        if paths is None:
+            paths = self.get_paths()
+        for path_index, path in enumerate(paths):
+            path_saddles = path[1:-1][np.isin(path[1:-1], self.saddles)]
+            for saddle in path_saddles:
+                if not self.is_correct_saddle_on_path(path, saddle, paths):
+                    yield path_index, saddle
+                    if first:
+                        break
+
+    
+    def path_is_increasing(self, path) -> bool:
+        """
+        """
+        path_vals = self.values[path]
+        status = path_vals[1] > path_vals[0]
+        return status
+    
+    def fix_path(self, path, saddle, other_paths=[]):
+        """
+        """
+        if self.is_correct_saddle_on_path(path, saddle, other_paths):
+            return path
+        path_direction = self.path_is_increasing(path)
+        suffixes = [chain for chain in other_paths if chain[0] == saddle and self.path_is_increasing(chain) == path_direction]
+        prefix = path[:list(path).index(saddle)]
+        for suffix in suffixes:
+            new_path = np.concatenate([prefix, suffix])
+            if self.is_correct_saddle_on_path(new_path, saddle, other_paths):
+                return new_path
+
+
 
     def get_paths(self, fix_incorrect_paths=True):
         """
@@ -261,58 +367,68 @@ class MorseSmale:
                 path = np.append(saddle, path)
                 self.paths.append(path)
             
-
             if fix_incorrect_paths:
-                def common_suffix(a, b):
-                    a = np.asarray(a)
-                    b = np.asarray(b)
-                    
-                    n = min(len(a), len(b))
-                    a_rev = a[-n:][::-1]
-                    b_rev = b[-n:][::-1]
-                    
-                    diff = np.flatnonzero(a_rev != b_rev)
-                    k = diff[0] if len(diff) else n
-                    
-                    return a[-k:] if k > 0 else np.array([])
-                
-                possibly_wrong_paths_indices = [i for i, path in enumerate(self.paths) if np.isin(path[1:-1], self.saddles).any()]
-                for i in possibly_wrong_paths_indices:
-                    path = self.paths[i]
-            
-                    # this could work only in the case when there is only 1 intersection
-                    saddle = path[1:-1][np.isin(path[1:-1], self.saddles)][0]
-                    short_path = path[:list(path).index(saddle) + 1]
-                    print(f'short_path: {short_path}')
-                    if path[-1] in self.maxs:
-                        saddle_directions = [next_node for s, next_node in self.iterate_saddles_and_increasing_directions() if  s == saddle]
-                        saddle_counter_directions = [next_node for s, next_node in self.iterate_saddles_and_decreasing_directions() if  s == saddle]
-                        
-                        direction_graph = self.get_increasing_graph()
-                    else:
-                        saddle_directions = [next_node for s, next_node in self.iterate_saddles_and_decreasing_directions() if  s == saddle]
-                        saddle_counter_directions = [next_node for s, next_node in self.iterate_saddles_and_increasing_directions() if  s == saddle]
-                        direction_graph = self.get_decreasing_graph()
-                    saddle_counter_directions = np.setdiff1d(saddle_counter_directions, path)
-                    
-                    # possible path trajectories
-                    optional_paths = [graph_methods.get_chain_from(direction_graph, next_node) for next_node in saddle_directions]
-                    print('optional_paths:', optional_paths)
-                    optional_paths = [np.concatenate([short_path, optional_path]) for optional_path in optional_paths]
-                    print('optional_paths:', optional_paths)
-                    
-                    counter_paths = [counter_path[::-1] for counter_path in self.paths if counter_path[0] == saddle]
-                    counter_paths_merges = [common_suffix(counter_path, short_path) for counter_path in counter_paths]
-                    counter_path = counter_paths[np.argmax([len(counter_path_merged) for counter_path_merged in counter_paths_merges])]
-                    # the paths which should not be intersected
-                    constraining_paths = [np.append(counter_path, next_node) for next_node in saddle_counter_directions]
-                    print('constraining_paths:', constraining_paths)
-            
-                    for optional_path in optional_paths:
-            
-                        if not np.any([triangletools.merging_paths_intersects(optional_path, constraining_path, self.faces) for constraining_path in constraining_paths]):
-                            self.paths[i] = optional_path
-                            break
+                incorrect_path_saddle_pairs = list(self.iterate_incorrect_saddles_on_paths(self.paths, first=True))
+                while len(incorrect_path_saddle_pairs) > 0:
+                    print(f'incorrect_path_saddle_pairs: {len(incorrect_path_saddle_pairs)}:\n{incorrect_path_saddle_pairs}')
+                    path_index, saddle = incorrect_path_saddle_pairs[0]
+                    path = self.paths.pop(path_index)
+                    new_path = self.fix_path(path, saddle, self.paths)
+                    self.paths.append(new_path)
+                    incorrect_path_saddle_pairs = list(self.iterate_incorrect_saddles_on_paths(self.paths, first=True))
+
+
+            #if fix_incorrect_paths:
+            #    def common_suffix(a, b):
+            #        a = np.asarray(a)
+            #        b = np.asarray(b)
+            #        
+            #        n = min(len(a), len(b))
+            #        a_rev = a[-n:][::-1]
+            #        b_rev = b[-n:][::-1]
+            #        
+            #        diff = np.flatnonzero(a_rev != b_rev)
+            #        k = diff[0] if len(diff) else n
+            #        
+            #        return a[-k:] if k > 0 else np.array([])
+            #    
+            #    possibly_wrong_paths_indices = [i for i, path in enumerate(self.paths) if np.isin(path[1:-1], self.saddles).any()]
+            #    for i in possibly_wrong_paths_indices:
+            #        path = self.paths[i]
+            #
+            #        # this could work only in the case when there is only 1 intersection
+            #        saddle = path[1:-1][np.isin(path[1:-1], self.saddles)][0]
+            #        short_path = path[:list(path).index(saddle) + 1]
+            #        print(f'short_path: {short_path}')
+            #        if path[-1] in self.maxs:
+            #            saddle_directions = [next_node for s, next_node in self.iterate_saddles_and_increasing_directions() if  s == saddle]
+            #            saddle_counter_directions = [next_node for s, next_node in self.iterate_saddles_and_decreasing_directions() if  s == saddle]
+            #            
+            #            direction_graph = self.get_increasing_graph()
+            #        else:
+            #            saddle_directions = [next_node for s, next_node in self.iterate_saddles_and_decreasing_directions() if  s == saddle]
+            #            saddle_counter_directions = [next_node for s, next_node in self.iterate_saddles_and_increasing_directions() if  s == saddle]
+            #            direction_graph = self.get_decreasing_graph()
+            #        saddle_counter_directions = np.setdiff1d(saddle_counter_directions, path)
+            #        
+            #        # possible path trajectories
+            #        optional_paths = [graph_methods.get_chain_from(direction_graph, next_node) for next_node in saddle_directions]
+            #        print('optional_paths:', optional_paths)
+            #        optional_paths = [np.concatenate([short_path, optional_path]) for optional_path in optional_paths]
+            #        print('optional_paths:', optional_paths)
+            #        
+            #        counter_paths = [counter_path[::-1] for counter_path in self.paths if counter_path[0] == saddle]
+            #        counter_paths_merges = [common_suffix(counter_path, short_path) for counter_path in counter_paths]
+            #        counter_path = counter_paths[np.argmax([len(counter_path_merged) for counter_path_merged in counter_paths_merges])]
+            #        # the paths which should not be intersected
+            #        constraining_paths = [np.append(counter_path, next_node) for next_node in saddle_counter_directions]
+            #        print('constraining_paths:', constraining_paths)
+            #
+            #        for optional_path in optional_paths:
+            #
+            #            if not np.any([triangletools.merging_paths_intersects(optional_path, constraining_path, self.faces) for constraining_path in constraining_paths]):
+            #                self.paths[i] = optional_path
+            #                break
         return self.paths
         
     
@@ -329,26 +445,6 @@ class MorseSmale:
         for path in self.get_paths():
             yield path
 
-
-    def get_face_graph(self):
-        """
-        Return the face adjacency graph.
-
-        Returns:
-        --------
-        self.face_graph: nx.Graph
-            Nodes are indices of the faces
-            Edges exists between 2 nodes, if 2 coresponding faces share a common edge
-        """
-        if not hasattr(self, 'face_graph'):
-            self.face_graph = nx.Graph()
-            self.face_graph.add_nodes_from(range(self.n_faces))
-            for (i0, face0), (i1, face1) in itertools.combinations(enumerate(self.faces), 2):
-                intersection = np.intersect1d(face0, face1)
-                if len(intersection) == 2:
-                    self.face_graph.add_edge(i0, i1, intersection=intersection)
-        return self.face_graph.copy()
-    
 
     def define_decomposition_by_paths(self):
         """
@@ -434,8 +530,10 @@ class MorseSmale:
         chain: np.array[int] or list[int]
             The indices of the chain vertices
 
-        weight_function : str
+        weight_function : str or function
             The way how to compute the edge weight
+
+            Labeled options:
             ``'area'``: area of the quadrangle of centers of the faces and vertices of the common edge
 
             ``'common-edge-length'``: the distance between vertices of the common edge
@@ -448,17 +546,17 @@ class MorseSmale:
             The distance from the chain for each vertex
         """
         if type(weight_function) is str:
-            if weight_function == 'area':
+            if weight_function.lower() == 'area':
                 def weight_function(face0, face1):
                     a, b = self.vertices[np.intersect1d(face0, face1)]
                     c0 = self.vertices[face0].mean(axis=0)
                     c1 = self.vertices[face1].mean(axis=0)
                     return geometry.triangle_area(a, b, c0) + geometry.triangle_area(a, b, c1)
-            elif weight_function == 'common-edge-length':
+            elif weight_function.lower() in ['length', 'common-edge-length']:
                 def weight_function(face0, face1):
                     a, b = self.vertices[np.intersect1d(face0, face1)]
                     return np.linalg.norm(a - b)
-            if weight_function == 'centers-distance':
+            elif weight_function.lower() in ['distance', 'centers-distance']:
                 def weight_function(face0, face1):
                     a, b = self.vertices[np.intersect1d(face0, face1)]
                     m = 0.5*(a + b)
@@ -466,7 +564,7 @@ class MorseSmale:
                     c1 = self.vertices[face1].mean(axis=0)
                     return np.linalg.norm(c0 - m) + np.linalg.norm(c1 - m)
             else:
-                raise ValueError("Expected weight_function parameter be None, str from ['area', 'length'] or the function of 2 parameters")
+                raise ValueError("Expected weight_function parameter be None, str from ['area', 'length', 'distance'] or the function of 2 parameters")
         if weight_function is None:
             weight = 'weight'
         else:
