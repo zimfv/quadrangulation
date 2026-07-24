@@ -253,6 +253,79 @@ class MorseSmale:
                 yield (saddle, next_node)
     
 
+#    def is_correct_saddle_on_path(self, path, saddle, other_paths=[]) -> bool:
+#        """
+#        Return True if the saddle on path has a correct direction out
+#        
+#        Parameters:
+#        -----------
+#        path : np.array[int]
+#
+#        saddle: int
+#
+#        other_paths: list[np.array[int]]
+#
+#        Returns:
+#        --------
+#        path_turns_correctly: bool
+#        """
+#        if (saddle not in path[1:-1]) or (saddle not in self.saddles):
+#            raise ValueError("saddle expected to be a not booundary saddle on the path")
+#        
+#        # get a structure of faces surrounding the saddle
+#        surrounding_faces_indices = np.argwhere((self.faces == saddle).any(axis=1)).ravel()
+#        surrounding_faces_graph = self.get_face_graph().subgraph(nodes=surrounding_faces_indices).copy()
+#
+#        # path splits the faces surrounding the saddle into 2 halfspace
+#        path_edges = np.sort(np.transpose([path[1:], path[:-1]]), axis=1)
+#        graph_path_edges = [(e0, e1) for e0, e1, data in surrounding_faces_graph.edges(data=True) if (data['intersection'] == path_edges).all(axis=1).any()]
+#        surrounding_faces_graph.remove_edges_from(graph_path_edges)
+#        assert nx.number_connected_components(surrounding_faces_graph) <= 2
+#        halfspace_graphs = [surrounding_faces_graph.subgraph(component).copy() for component in nx.connected_components(surrounding_faces_graph)]
+#       
+#        # split halfspaces by other paths
+#        other_paths_edges = np.sort(np.transpose(np.hstack([[chain[1:], chain[:-1]] for chain in other_paths])), axis=1)
+#        graph_other_path_edges = [(e0, e1) for e0, e1, data in surrounding_faces_graph.edges(data=True) if (data['intersection'] == other_paths_edges).all(axis=1).any()]
+#        for i in range(len(halfspace_graphs)):
+#            halfspace_graphs[i].remove_edges_from(graph_other_path_edges)
+#        
+#        # check if there is a halfspace not splited by other paths
+#        halfspace_graph_splits = np.array([nx.number_connected_components(g) for g in halfspace_graphs])
+#        path_turns_correctly = (halfspace_graph_splits == 1).any()
+#
+#
+#        print(f"Path through saddle: {path[0]} - {saddle} - {path[-1]}")
+#        print(f"Suurounding halfspaces: {[g.nodes() for g in halfspace_graphs]}")
+#        print(f"Suurounding halfspaces splits: {halfspace_graph_splits}")
+#        print(f"Verdict: {path_turns_correctly}")
+#        return path_turns_correctly
+
+
+
+
+    def get_chain_halfspaces(self, chain):
+        """
+        """
+        surrounding_faces_indices = np.isin(self.faces, chain[1:-1]).any(axis=1) 
+        surrounding_faces_indices = surrounding_faces_indices | ((self.faces == chain[0]).any(axis=1) & (self.faces == chain[1]).any(axis=1))
+        surrounding_faces_indices = surrounding_faces_indices | ((self.faces == chain[-1]).any(axis=1) & (self.faces == chain[-2]).any(axis=1))
+        surrounding_faces_indices = np.argwhere(surrounding_faces_indices).ravel()
+        #print(f'surrounding_faces_indices: {surrounding_faces_indices}')
+
+        surrounding_faces_graph = self.get_face_graph().subgraph(surrounding_faces_indices).copy()
+        #print(f'surrounding_faces_graph.nodes (before removing paths): {surrounding_faces_graph.nodes}')
+        #print(f'surrounding_faces_graph.edges (before removing paths): {surrounding_faces_graph.edges}')
+        edges_in_chain = np.sort(np.transpose([chain[1:], chain[:-1]]), axis=1)
+        edges_to_remove = [(e0, e1) for e0, e1, data in surrounding_faces_graph.edges(data=True) if (data['intersection'] == edges_in_chain).all(axis=1).any()]
+        surrounding_faces_graph.remove_edges_from(edges_to_remove)
+        #print(f'surrounding_faces_graph.nodes (after removing paths): {surrounding_faces_graph.nodes}')
+        #print(f'surrounding_faces_graph.edges (after removing paths): {surrounding_faces_graph.edges}')
+        halfspaces_face_indices = [list(comp) for comp in nx.connected_components(surrounding_faces_graph)]
+        #print(f'halfspaces_face_indices: {halfspaces_face_indices}')
+        assert len(halfspaces_face_indices) in {1, 2}
+        return halfspaces_face_indices
+
+
     def is_correct_saddle_on_path(self, path, saddle, other_paths=[]) -> bool:
         """
         Return True if the saddle on path has a correct direction out
@@ -271,29 +344,25 @@ class MorseSmale:
         """
         if (saddle not in path[1:-1]) or (saddle not in self.saddles):
             raise ValueError("saddle expected to be a not booundary saddle on the path")
-        
-        # get a structure of faces surrounding the saddle
-        surrounding_faces_indices = np.argwhere((self.faces == saddle).any(axis=1)).ravel()
-        print(f'surrounding_faces_indices: {surrounding_faces_indices}')
-        surrounding_faces_graph = self.get_face_graph().subgraph(nodes=surrounding_faces_indices).copy()
 
-        # path splits the faces surrounding the saddle into 2 halfspace
-        path_edges = np.sort(np.transpose([path[1:], path[:-1]]), axis=1)
-        graph_path_edges = [(e0, e1) for e0, e1, data in surrounding_faces_graph.edges(data=True) if (data['intersection'] == path_edges).all(axis=1).any()]
-        surrounding_faces_graph.remove_edges_from(graph_path_edges)
-        assert nx.number_connected_components(surrounding_faces_graph) <= 2
-        halfspace_graphs = [surrounding_faces_graph.subgraph(component).copy() for component in nx.connected_components(surrounding_faces_graph)]
-        
-        # split halfspaces by other paths
-        other_paths_edges = np.sort(np.transpose(np.hstack([[chain[1:], chain[:-1]] for chain in other_paths])), axis=1)
-        graph_other_path_edges = [(e0, e1) for e0, e1, data in surrounding_faces_graph.edges(data=True) if (data['intersection'] == other_paths_edges).all(axis=1).any()]
-        for i in range(len(halfspace_graphs)):
-            halfspace_graphs[i].remove_edges_from(graph_other_path_edges)
-        
-        # check if there is a halfspace not splited by other paths
-        halfspace_graph_splits = np.array([nx.number_connected_components(g) for g in halfspace_graphs])
-        path_turns_correctly = (halfspace_graph_splits == 1).any()
+        saddle_index = list(path).index(saddle)
+        halfspaces = self.get_chain_halfspaces(path[:saddle_index + 2])
+
+
+        face_graph_without_paths = self.get_face_graph()
+        edges_in_paths = np.sort(np.transpose(np.hstack([[chain[1:], chain[:-1]] for chain in other_paths])), axis=1)
+        edges_to_remove = [(e0, e1) for e0, e1, data in face_graph_without_paths.edges(data=True) if (data['intersection'] == edges_in_paths).all(axis=1).any()]
+        face_graph_without_paths.remove_edges_from(edges_to_remove)
+        components_in_halfspaces = np.array([nx.number_connected_components(face_graph_without_paths.subgraph(hfaces)) for hfaces in halfspaces])
+        path_turns_correctly = (components_in_halfspaces == 1).any()
+
+        print(f"Path through saddle: {path[0]} - {saddle} - {path[-1]}")
+        print(f"Surrounding halfspaces: {[hf for hf in halfspaces]}")
+        print(f"Components in halfspaces: {components_in_halfspaces}")
+        print(f"Verdict: {path_turns_correctly}")
         return path_turns_correctly
+        
+
 
 
     def iterate_incorrect_saddles_on_paths(self, paths=None, first=True):
@@ -315,6 +384,7 @@ class MorseSmale:
                     yield path_index, saddle
                     if first:
                         break
+
 
     
     def path_is_increasing(self, path) -> bool:
