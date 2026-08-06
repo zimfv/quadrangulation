@@ -6,6 +6,12 @@ import itertools
 from functools import cached_property, cache
 from collections import deque
 
+from src import pathtools
+
+
+
+
+
 class MorseSmale:
     def __init__(self, faces, values, vertices=None):
         r"""
@@ -139,38 +145,101 @@ class MorseSmale:
     def saddles(self):
         """
         """
-        saddles = np.array(self.get_saddles_and_directions()[0])
-        return saddles
+        return np.array(self.get_saddles_and_directions()[0])
 
 
-    def drections_queue(self, how='increasing-decreasing'):
+    def iterate_increasing_directions(self):
+        """
+        """
+        saddles, increasing_steps, decreasing_steps = self.get_saddles_and_directions()
+        for saddle, steps in zip(saddles, increasing_steps):
+            for step in steps:
+                yield saddle, step
+        
+
+    def iterate_decreasing_directions(self):
+        """
+        """
+        saddles, increasing_steps, decreasing_steps = self.get_saddles_and_directions()
+        for saddle, steps in zip(saddles, decreasing_steps):
+            for step in steps:
+                yield saddle, step
+
+
+    def get_directions_queue(self, how='increasing-decreasing') -> deque:
         """
         """
         if how == 'increasing-decreasing':
-            saddles, increasing_steps, decreasing_steps = self.get_saddles_and_directions()
-            drections_queue = deque(
-                (saddle, int(step))
-                for saddle, steps in itertools.chain(
-                    zip(saddles, increasing_steps),
-                    zip(saddles, decreasing_steps),
-                )
-                for step in steps
-            )
+            drections_queue = deque(itertools.chain(self.iterate_increasing_directions(), 
+                                                    self.iterate_decreasing_directions()))
             
-        if how == 'decreasing-increasing':
-            saddles, increasing_steps, decreasing_steps = self.get_saddles_and_directions()
-            drections_queue = deque(
-                (saddle, int(step))
-                for saddle, steps in itertools.chain(
-                    zip(saddles, decreasing_steps),
-                    zip(saddles, increasing_steps),
-                )
-                for step in steps
-            )
+        elif how == 'decreasing-increasing':
+            drections_queue = deque(itertools.chain(self.iterate_decreasing_directions(), 
+                                                    self.iterate_increasing_directions()))
+
+        else:
+            pass
 
         return drections_queue
-            
 
 
 
-            
+    def get_available_next_vertices_for_the_path(self, path, old_paths=[]):
+        """
+        """
+        nexts = self.edges[(self.edges == path[-1]).any()]
+        nexts = nexts[~np.isin(nexts, path)]
+        does_continuation_intersect_old = lambda next: np.any([pathtools.paths_intersect(np.append(path, next), old_path, self.faces) for old_path in old_paths])
+        nexts = nexts[~np.vectorize(does_continuation_intersect_old)(nexts)]
+
+        return nexts
+
+
+    def continue_path(self, path, old_paths=[]):
+        """
+        """
+        # FIXME: Defined incorrect destinations, and they are achived
+        nexts = self.get_available_next_vertices_for_the_path(path, old_paths)
+        next = nexts[np.argmax((self.values[nexts] - path[-1])*(path[-1] - path[0]))]
+        print(f'path: {np.array(path)} -> {next}\nvals: {self.values[path]} -> {self.values[next]}\n')
+        return np.append(path, next)
+
+
+    def get_paths(self, how='increasing-decreasing', cache=True):
+        """
+        """
+        # FIXME: Defined incorrect destinations, and they are achived
+        if cache and hasattr(self, 'paths'):
+            return self.paths
+        
+        directions_queue = self.get_directions_queue(how=how)
+
+        paths = []
+        while directions_queue:
+            merged_paths = pathtools.merge_paths_at_nodes(paths, self.saddles)
+
+            new_path = np.array(directions_queue.popleft())
+            increasing = new_path[1] > new_path[0]
+            destinations = self.local_maxima if increasing else self.local_minima
+            print(f'path indices: {new_path}, destination indices: {destinations}')
+            print(f'path  values: {self.values[new_path]}, destination  values: {self.values[destinations]}, increasing={increasing}')
+
+            while new_path[-1] not in destinations:
+                new_path = self.continue_path(new_path, old_paths=merged_paths)
+                if new_path[-1] in self.saddles:
+                    # Check, if saddle have opposite paths, and add this direction to the end of queue if not
+                    saddle = new_path[-1]
+                    saddles, increasing_steps, decreasing_steps = self.get_saddles_and_directions()
+                    opposite_steps = (decreasing_steps if increasing else increasing_steps)[saddles.index(saddle)]
+                    step_is_done = lambda step: np.any([(path[[0, 1]] == np.array(saddle, step)).all() for path in paths])
+                    if not np.vectorize(step_is_done)(opposite_steps).all():
+                        directions_queue.append(new_path[[0, 1]])
+                        break
+            if not new_path[-1] in self.saddles:
+                paths.append(np.array(new_path))
+
+        if cache:
+            self.paths = paths
+        return paths
+    
+
