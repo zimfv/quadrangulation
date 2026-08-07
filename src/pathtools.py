@@ -3,6 +3,10 @@ import scipy as sp
 import itertools
 import igl
 
+from pygeodesic import geodesic
+
+from src import triangletools
+
 
 
 
@@ -16,7 +20,10 @@ def get_path_sides(path, faces):
         The indices of faces from each side
     """
     path_edges = np.sort(np.transpose([path[:-1], path[1:]]), axis=1)
-    touching_faces_indices = np.argwhere((faces[..., None] == path[1:-1]).any(axis=1).any(axis=1)).ravel()
+    #touching_faces_indices = np.argwhere((faces[..., None] == path[1:-1]).any(axis=1).any(axis=1)).ravel()  
+    touching_faces_indices = np.argwhere((faces[..., None] == path[1:-1]).any(axis=1).any(axis=1) | \
+                                         ((faces[..., None] == path[1:]).any(axis=1) & (faces[..., None] == path[:-1]).any(axis=1)).any(axis=1)).ravel()
+
     touching_faces = faces[touching_faces_indices]
     n = len(touching_faces)
 
@@ -34,6 +41,8 @@ def get_path_sides(path, faces):
 def paths_intersect(path0, path1, faces):
     """
     """
+    if np.intersect1d(path0, path1).size == 0:
+        return False
     sides0 = get_path_sides(path0, faces)
     sides1 = get_path_sides(path1, faces)
     if (len(sides0) < 2) or (len(sides1) < 2):
@@ -64,4 +73,24 @@ def merge_paths_at_nodes(paths, nodes=[]):
             new_paths.append(np.concatenate([path0, path1]))
     
     return merge_paths_at_nodes(new_paths, nodes)
+
+
+def get_path_close_geodesic(path, faces, vertices):
+    """
+    """
+    if len(path) == 2:
+        return vertices[path]
+
+    sides = get_path_sides(path, faces)
+
+    face_indices = np.concatenate(sides)
+
+    V, F, old2new, new2old = triangletools.compact_mesh(vertices, faces[face_indices])
+    source_vid = old2new[path[0]]
+    target_vid = old2new[path[-1]]
+
+    geo = geodesic.PyGeodesicAlgorithmExact(V, F)
+    geo_distance, geopath = geo.geodesicDistance(source_vid, target_vid)
+
+    return geopath
     

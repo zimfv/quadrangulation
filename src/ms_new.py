@@ -8,6 +8,8 @@ from collections import deque
 
 from src import pathtools
 
+from tqdm import tqdm
+
 
 
 
@@ -70,15 +72,6 @@ class MorseSmale:
 
 
     @cached_property
-    def local_minima(self):
-        """
-        """
-        adjacency_matrix = igl.adjacency_matrix(self.faces)
-        is_min = lambda i: (self.values[i] < self.values[adjacency_matrix.getrow(i).indices]).all()
-        mins = np.argwhere(np.vectorize(is_min)(np.arange(self.n_vertices))).ravel()
-        return mins
-    
-    @cached_property
     def local_maxima(self):
         """
         """
@@ -86,6 +79,16 @@ class MorseSmale:
         is_max = lambda i: (self.values[i] > self.values[adjacency_matrix.getrow(i).indices]).all()
         maxs = np.argwhere(np.vectorize(is_max)(np.arange(self.n_vertices))).ravel()
         return maxs
+
+    
+    @cached_property
+    def local_minima(self):
+        """
+        """
+        adjacency_matrix = igl.adjacency_matrix(self.faces)
+        is_min = lambda i: (self.values[i] < self.values[adjacency_matrix.getrow(i).indices]).all()
+        mins = np.argwhere(np.vectorize(is_min)(np.arange(self.n_vertices))).ravel()
+        return mins
 
 
     @cache
@@ -127,7 +130,7 @@ class MorseSmale:
 
 
             # maybe there should be some other condition...
-            if (higher_n_components > 1) and (lower_n_components > 1):
+            if (higher_n_components > 1) or (lower_n_components > 1):
                 saddles.append(i)
 
                 increasing_steps.append([])
@@ -146,6 +149,13 @@ class MorseSmale:
         """
         """
         return np.array(self.get_saddles_and_directions()[0])
+
+
+    @property
+    def n_paths(self):
+        """
+        """
+        return np.concatenate(self.get_saddles_and_directions()[1] + self.get_saddles_and_directions()[2]).size
 
 
     def iterate_increasing_directions(self):
@@ -187,11 +197,11 @@ class MorseSmale:
     def get_available_next_vertices_for_the_path(self, path, old_paths=[]):
         """
         """
-        nexts = self.edges[(self.edges == path[-1]).any()]
+        nexts = self.edges[(self.edges == path[-1]).any(axis=1)]
         nexts = nexts[~np.isin(nexts, path)]
         does_continuation_intersect_old = lambda next: np.any([pathtools.paths_intersect(np.append(path, next), old_path, self.faces) for old_path in old_paths])
         nexts = nexts[~np.vectorize(does_continuation_intersect_old)(nexts)]
-
+        
         return nexts
 
 
@@ -200,30 +210,33 @@ class MorseSmale:
         """
         # FIXME: Defined incorrect destinations, and they are achived
         nexts = self.get_available_next_vertices_for_the_path(path, old_paths)
-        next = nexts[np.argmax((self.values[nexts] - path[-1])*(path[-1] - path[0]))]
-        print(f'path: {np.array(path)} -> {next}\nvals: {self.values[path]} -> {self.values[next]}\n')
+        dirrection_coeff = (self.values[path[-1]] - self.values[path[0]])
+        next = nexts[np.argmax(dirrection_coeff*(self.values[nexts] - self.values[path[-1]]))]
         return np.append(path, next)
 
 
-    def get_paths(self, how='increasing-decreasing', cache=True):
+    def get_paths(self, how='increasing-decreasing', cache: bool=True, with_bar: bool=True):
         """
         """
         # FIXME: Defined incorrect destinations, and they are achived
-        if cache and hasattr(self, 'paths'):
-            return self.paths
+        if cache and hasattr(self, '_paths'):
+            return self._paths
         
         directions_queue = self.get_directions_queue(how=how)
 
+        directions_returned_to_queue = set()
+        if with_bar:
+            pbar = tqdm(total=self.n_paths, desc=f'Searching paths')
+            
         paths = []
         while directions_queue:
             merged_paths = pathtools.merge_paths_at_nodes(paths, self.saddles)
 
             new_path = np.array(directions_queue.popleft())
-            increasing = new_path[1] > new_path[0]
-            destinations = self.local_maxima if increasing else self.local_minima
-            print(f'path indices: {new_path}, destination indices: {destinations}')
-            print(f'path  values: {self.values[new_path]}, destination  values: {self.values[destinations]}, increasing={increasing}')
+            increasing = self.values[new_path[1]] > self.values[new_path[0]]
 
+            destinations = self.local_maxima if increasing else self.local_minima
+            
             while new_path[-1] not in destinations:
                 new_path = self.continue_path(new_path, old_paths=merged_paths)
                 if new_path[-1] in self.saddles:
@@ -231,15 +244,36 @@ class MorseSmale:
                     saddle = new_path[-1]
                     saddles, increasing_steps, decreasing_steps = self.get_saddles_and_directions()
                     opposite_steps = (decreasing_steps if increasing else increasing_steps)[saddles.index(saddle)]
-                    step_is_done = lambda step: np.any([(path[[0, 1]] == np.array(saddle, step)).all() for path in paths])
+                    step_is_done = lambda step: np.any([(path[:2] == np.array([saddle, step])).all() for path in paths])
+
+                                        
                     if not np.vectorize(step_is_done)(opposite_steps).all():
-                        directions_queue.append(new_path[[0, 1]])
-                        break
+                        directions_queue.append(tuple(new_path[:2]))
+                        directions_returned_to_queue.add(tuple(new_path[:2]))
+                        
             if not new_path[-1] in self.saddles:
                 paths.append(np.array(new_path))
+                directions_returned_to_queue -= {tuple(new_path[:2])}
+                if with_bar:
+                    pbar.update()
+                
+            if with_bar:
+                pbar.set_postfix({'Returned directions': directions_returned_to_queue})
+                pbar.refresh()
 
         if cache:
-            self.paths = paths
+            self._paths = paths
         return paths
+
+
+
+
+    def iterate_paths_close_geodesics(self, how='increasing-decreasing', cache: bool=True, with_bar: bool=True):
+        """
+        """
+        for path in self.get_paths(how=how, cache=cache, with_bar=with_bar):
+            geopath = pathtools.get_path_close_geodesic(path, self.faces, self.vertices)
+            yield geopath
+
     
 
