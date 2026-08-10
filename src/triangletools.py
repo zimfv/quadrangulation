@@ -1,7 +1,9 @@
 import itertools
 import numpy as np
 import networkx as nx
+import scipy as sp
 import igl
+
 
 def compact_mesh(V, F):
     """
@@ -134,4 +136,82 @@ def merging_paths_intersects(path0, path1, faces):
         return True
 
     
+"""
+def face_adjacency(F, restricted_edges):
+    n = len(F)
+
+    # TT[i, e] = triangle adjacent to face i across edge e, or -1.
+    # TTi isn't needed here.
+    TT, _ = igl.triangle_triangle_adjacency(F)
+
+    # libigl edge e is opposite vertex e:
+    # e=0 -> (v1,v2), e=1 -> (v2,v0), e=2 -> (v0,v1)
+    E = np.stack([
+        F[:, [1, 2]],
+        F[:, [2, 0]],
+        F[:, [0, 1]],
+    ], axis=1)                         # (n, 3, 2)
+
+    E = np.sort(E, axis=2)            # canonical undirected edges
+    R = np.sort(restricted_edges, axis=1)
+
+    # Efficient row-wise membership test using structured arrays
+    edge_dtype = np.dtype([("u", E.dtype), ("v", E.dtype)])
+
+    E_view = np.ascontiguousarray(E).view(edge_dtype).reshape(n, 3)
+    R_view = np.ascontiguousarray(R).view(edge_dtype).reshape(-1)
+
+    restricted = np.isin(E_view, R_view)   # (n, 3)
+
+    # Keep existing neighbors whose shared edge is not restricted
+    valid = (TT >= 0) & ~restricted
+
+    rows = np.broadcast_to(np.arange(n)[:, None], TT.shape)[valid]
+    cols = TT[valid]
+
+    A = sp.sparse.csr_matrix(
+        (np.ones(len(rows), dtype=np.uint8), (rows, cols)),
+        shape=(n, n),
+    )
+
+    return A
+"""
+
+def face_adjacency(faces, restricted_edges=None):
+    """
+    Returns the face adjacency matrix, where 2 faces are adjacent if they share a common not restricted edge
+
+    Parameters:
+    -----------
+    faces: np.array shape(n, 3)
+        The faces of the triangulation
+
+    restricted_edges: np.array shape (k, 2)
+        The list of restricted edges
+
+    Returns:
+    --------
+    A : sp.sparse.csr_matrix
+        Face adjacency matrix
+    """
+    if restricted_edges is None:
+        restricted_edges = np.zeros([0, 2], dtype=int)
+    n = len(faces)
+
+    restricted_edges = np.sort(restricted_edges, axis=-1)
+
+    rows = []
+    cols = []
+    for (i0, face0), (i1, face1) in itertools.combinations(enumerate(faces), 2):
+        if np.intersect1d(face0, face1).size == 2:
+            if not (restricted_edges == np.intersect1d(face0, face1)).all(axis=-1).any():
+                rows.extend([i0, i1])
+                cols.extend([i1, i0])
+
+    A = sp.sparse.csr_matrix(
+        (np.ones(len(rows), dtype=np.uint8), (rows, cols)),
+        shape=(n, n),
+    )
+    return A
+
     

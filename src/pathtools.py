@@ -19,21 +19,17 @@ def get_path_sides(path, faces):
     sides: list[np.array[int]]
         The indices of faces from each side
     """
-    path_edges = np.sort(np.transpose([path[:-1], path[1:]]), axis=1)
+    
     #touching_faces_indices = np.argwhere((faces[..., None] == path[1:-1]).any(axis=1).any(axis=1)).ravel()  
     touching_faces_indices = np.argwhere((faces[..., None] == path[1:-1]).any(axis=1).any(axis=1) | \
                                          ((faces[..., None] == path[1:]).any(axis=1) & (faces[..., None] == path[:-1]).any(axis=1)).any(axis=1)).ravel()
 
     touching_faces = faces[touching_faces_indices]
-    n = len(touching_faces)
+    
+    face_adjacency_matrix = triangletools.face_adjacency(touching_faces, restricted_edges=np.transpose([path[:-1], path[1:]]))
 
-    TT, TTi = igl.triangle_triangle_adjacency(touching_faces)
-    face_adjacency_matrix = sp.sparse.csc_matrix((n, n), dtype=int)
-    for i, row in enumerate(TT):
-        for j in row:
-            if not ((np.array([i, j]) == path_edges).all(axis=-1).any() and (np.array([j, i]) == path_edges).all(axis=-1).any()):
-                face_adjacency_matrix[i, j] = 1
     n_components, labels = sp.sparse.csgraph.connected_components(csgraph=face_adjacency_matrix, directed=False, return_labels=True)
+
     sides = [touching_faces_indices[labels == label] for label in range(n_components)]
     return sides
 
@@ -51,28 +47,37 @@ def paths_intersect(path0, path1, faces):
     return (intersection_matrix != 0).all()
 
 
+def concatenate_paths(path0, path1):
+    """
+    """
+    if path0[0] == path1[0]:
+        return np.concatenate([path0[::-1], path1])
+    if path0[-1] == path1[-1]:
+        return np.concatenate([path0, path1[::-1]])
+    if path0[-1] == path1[0]:
+        return np.concatenate([path0, path1])
+    if path0[0] == path1[-1]:
+        return np.concatenate([path1, path0])
+    raise ValueError('Paths are inconcatenable.')
+        
+
+
 def merge_paths_at_nodes(paths, nodes=[]):
     """
     """
-    node_path_indices = [[i for i, path in enumerate(paths) if (path[[0, -1]] == node).any()] for node in nodes]
-    node_touching_counts = np.array([len(i) for i in node_path_indices])
-    if (node_touching_counts < 2).all():
-        return paths
+    # FIXME: Does not add new merged paths (also does not remove paths used to merge)
+    n_paths = len(paths)
+    paths_indices_in_nodes = [[i for i in range(n_paths) if (paths[i][[1, -1]] == node).any()] for node in nodes]
+    print(nodes, paths_indices_in_nodes)
+    merged_in_nodes = [
+        concatenate_paths(paths[i], paths[j])
+        for paths_indices_in_node in paths_indices_in_nodes
+        for i, j in itertools.combinations(paths_indices_in_node, 2)
+    ]
 
-    node = nodes[node_touching_counts >= 2][0]
-    node_path_indices = node_path_indices[np.argwhere(node_touching_counts >= 2).ravel()[0]]
+    new_paths = paths + merged_in_nodes
+    return new_paths
 
-    new_paths = [path for i, path in enumerate(paths) if i not in node_path_indices]
-    paths_to_merge = [path for i, path in enumerate(paths) if i in node_path_indices]
-
-    for path0, path1 in itertools.combinations(paths_to_merge, 2):
-        if path0[-1] != node:
-            path0 = np.array(path0)[::-1]
-        if path1[0] != node:
-            path1 = np.array(path1)[::-1]
-            new_paths.append(np.concatenate([path0, path1]))
-    
-    return merge_paths_at_nodes(new_paths, nodes)
 
 
 def get_path_close_geodesic(path, faces, vertices):

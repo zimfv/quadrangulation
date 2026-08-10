@@ -194,21 +194,27 @@ class MorseSmale:
 
 
 
-    def get_available_next_vertices_for_the_path(self, path, old_paths=[]):
+    def get_available_next_vertices_for_the_path(self, path, old_paths=None):
         """
         """
+        if old_paths is None:
+            old_paths = []
         nexts = self.edges[(self.edges == path[-1]).any(axis=1)]
         nexts = nexts[~np.isin(nexts, path)]
-        does_continuation_intersect_old = lambda next: np.any([pathtools.paths_intersect(np.append(path, next), old_path, self.faces) for old_path in old_paths])
-        nexts = nexts[~np.vectorize(does_continuation_intersect_old)(nexts)]
-        
+        old_paths_to_check = [old_path for old_path in old_paths if (old_path == path[-1]).any()]
+
+        continuation_intersects_old = [[pathtools.paths_intersect(np.append(path, next_vertex), old_path, self.faces) for old_path in old_paths_to_check] for next_vertex in nexts]
+
+        continuation_intersects_old = np.any(continuation_intersects_old, axis=1)
+
+        nexts = nexts[~continuation_intersects_old]
+
         return nexts
 
 
-    def continue_path(self, path, old_paths=[]):
+    def continue_path(self, path, old_paths=None):
         """
         """
-        # FIXME: Defined incorrect destinations, and they are achived
         nexts = self.get_available_next_vertices_for_the_path(path, old_paths)
         dirrection_coeff = (self.values[path[-1]] - self.values[path[0]])
         next = nexts[np.argmax(dirrection_coeff*(self.values[nexts] - self.values[path[-1]]))]
@@ -218,7 +224,6 @@ class MorseSmale:
     def get_paths(self, how='increasing-decreasing', cache: bool=True, with_bar: bool=True):
         """
         """
-        # FIXME: Defined incorrect destinations, and they are achived
         if cache and hasattr(self, '_paths'):
             return self._paths
         
@@ -229,9 +234,12 @@ class MorseSmale:
             pbar = tqdm(total=self.n_paths, desc=f'Searching paths')
             
         paths = []
+        j = 0
         while directions_queue:
-            merged_paths = pathtools.merge_paths_at_nodes(paths, self.saddles)
-
+            # FIXME: Here we should fix merged_path, and change the parameter
+            #merged_paths = pathtools.merge_paths_at_nodes(paths, self.saddles)
+            merged_paths = paths
+            
             new_path = np.array(directions_queue.popleft())
             increasing = self.values[new_path[1]] > self.values[new_path[0]]
 
@@ -246,11 +254,10 @@ class MorseSmale:
                     opposite_steps = (decreasing_steps if increasing else increasing_steps)[saddles.index(saddle)]
                     step_is_done = lambda step: np.any([(path[:2] == np.array([saddle, step])).all() for path in paths])
 
-                                        
                     if not np.vectorize(step_is_done)(opposite_steps).all():
                         directions_queue.append(tuple(new_path[:2]))
                         directions_returned_to_queue.add(tuple(new_path[:2]))
-                        
+
             if not new_path[-1] in self.saddles:
                 paths.append(np.array(new_path))
                 directions_returned_to_queue -= {tuple(new_path[:2])}
