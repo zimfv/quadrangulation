@@ -62,21 +62,32 @@ def concatenate_paths(path0, path1):
         
 
 
-def merge_paths_at_nodes(paths, nodes=[]):
+def merge_paths_at_nodes(paths, nodes=None):
     """
     """
     # FIXME: Does not add new merged paths (also does not remove paths used to merge)
-    n_paths = len(paths)
-    paths_indices_in_nodes = [[i for i in range(n_paths) if (paths[i][[1, -1]] == node).any()] for node in nodes]
-    print(nodes, paths_indices_in_nodes)
-    merged_in_nodes = [
-        concatenate_paths(paths[i], paths[j])
-        for paths_indices_in_node in paths_indices_in_nodes
-        for i, j in itertools.combinations(paths_indices_in_node, 2)
-    ]
+    if nodes is None:
+        nodes = np.zeros(0, dtype=int) 
+    nodes = np.asarray(nodes)
 
-    new_paths = paths + merged_in_nodes
-    return new_paths
+    path_ends = np.array([path[[0, -1]] for path in paths])
+    if path_ends.size == 0:
+        path_ends = np.zeros((0, 2), dtype=int)
+    
+    path_node_relation = (path_ends[..., None] == nodes).any(axis=1)
+    
+    new_paths = []
+    merged_paths_indices = []
+    for i, node in enumerate(nodes):
+        for j, k in itertools.combinations(np.argwhere(path_node_relation[:, i]).ravel(), 2):
+            new_paths.append(concatenate_paths(paths[j], paths[k]))
+            merged_paths_indices.extend([j, k])
+    
+    preserved_paths = [path for i, path in enumerate(paths) if i not in merged_paths_indices]
+
+    merged_paths = new_paths + preserved_paths
+    
+    return merged_paths
 
 
 
@@ -87,6 +98,9 @@ def get_path_close_geodesic(path, faces, vertices):
         return vertices[path]
 
     sides = get_path_sides(path, faces)
+    if len(sides) < 2:
+        return vertices[path]
+
 
     face_indices = np.concatenate(sides)
 

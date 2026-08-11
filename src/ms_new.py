@@ -201,7 +201,14 @@ class MorseSmale:
             old_paths = []
         nexts = self.edges[(self.edges == path[-1]).any(axis=1)]
         nexts = nexts[~np.isin(nexts, path)]
+
+
+
         old_paths_to_check = [old_path for old_path in old_paths if (old_path == path[-1]).any()]
+        forking_saddles = np.intersect1d(self.saddles, path[1:])
+        old_paths_to_check = pathtools.merge_paths_at_nodes(old_paths_to_check, forking_saddles)
+
+
 
         continuation_intersects_old = [[pathtools.paths_intersect(np.append(path, next_vertex), old_path, self.faces) for old_path in old_paths_to_check] for next_vertex in nexts]
 
@@ -216,6 +223,15 @@ class MorseSmale:
         """
         """
         nexts = self.get_available_next_vertices_for_the_path(path, old_paths)
+        if len(nexts) == 0:
+            if old_paths is None:
+                old_paths_blocking = []
+            else:
+                old_paths_blocking = [old_path for old_path in old_paths if (old_path == path[-1]).any()]
+            msg = f"The path {np.array2string(path, separator=", ")} can't be continued.\nIt's blocked by\n"
+            msg += "[" + ",\n ".join([np.array2string(old_path, separator=", ") for old_path in old_paths_blocking]) + "\n]"
+            raise ValueError(msg)
+
         dirrection_coeff = (self.values[path[-1]] - self.values[path[0]])
         next = nexts[np.argmax(dirrection_coeff*(self.values[nexts] - self.values[path[-1]]))]
         return np.append(path, next)
@@ -236,17 +252,13 @@ class MorseSmale:
         paths = []
         j = 0
         while directions_queue:
-            # FIXME: Here we should fix merged_path, and change the parameter
-            #merged_paths = pathtools.merge_paths_at_nodes(paths, self.saddles)
-            merged_paths = paths
-            
             new_path = np.array(directions_queue.popleft())
             increasing = self.values[new_path[1]] > self.values[new_path[0]]
 
             destinations = self.local_maxima if increasing else self.local_minima
             
             while new_path[-1] not in destinations:
-                new_path = self.continue_path(new_path, old_paths=merged_paths)
+                new_path = self.continue_path(new_path, old_paths=paths)
                 if new_path[-1] in self.saddles:
                     # Check, if saddle have opposite paths, and add this direction to the end of queue if not
                     saddle = new_path[-1]
