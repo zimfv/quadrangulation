@@ -7,6 +7,8 @@ from functools import cached_property, cache
 from collections import deque
 
 from src import pathtools
+from src import triangletools
+from src import mesh_topology
 
 from tqdm import tqdm
 
@@ -15,7 +17,7 @@ from tqdm import tqdm
 
 
 class MorseSmale:
-    def __init__(self, faces, values, vertices=None):
+    def __init__(self, faces, values, vertices=None, protected=None):
         r"""
         Initialize the 2-dimensional simplicilial complex with N vertices and M 2-faces to quadrangulate
 
@@ -38,6 +40,11 @@ class MorseSmale:
             self.vertices = np.array(vertices)
             if (self.vertices.shape[0] != self.values.shape[0]) or (self.vertices.ndim != 2):
                 raise ValueError(f'Expected vertices length ({self.values.shape[0]}, d)')
+
+        if protected is None:
+            self.protected = mesh_topology.get_boundary_edges(self.faces)
+        else:
+            self.protected = np.asarray(protected)
 
             
     @cached_property
@@ -202,16 +209,11 @@ class MorseSmale:
         nexts = self.edges[(self.edges == path[-1]).any(axis=1)]
         nexts = nexts[~np.isin(nexts, path)]
 
-
-
         old_paths_to_check = [old_path for old_path in old_paths if (old_path == path[-1]).any()]
         forking_saddles = np.intersect1d(self.saddles, path[1:])
         old_paths_to_check = pathtools.merge_paths_at_nodes(old_paths_to_check, forking_saddles)
 
-
-
         continuation_intersects_old = [[pathtools.paths_intersect(np.append(path, next_vertex), old_path, self.faces) for old_path in old_paths_to_check] for next_vertex in nexts]
-
         continuation_intersects_old = np.any(continuation_intersects_old, axis=1)
 
         nexts = nexts[~continuation_intersects_old]
@@ -285,8 +287,39 @@ class MorseSmale:
         return paths
 
 
+    def get_protected_critical_points(self):
+        """
+        """
+        return np.intersect1d(np.concatenate([self.saddles, self.local_maxima, self.local_minima]), self.protected)
 
 
+    def detect_cancelling_pairs(self, paths):
+        """
+        """
+        # TODO: We should cancel the critical points having only 1 or 2 paths and find the closest by filtration unprotected extremem
+        pass 
+
+    def cancel_pair(paths, saddle, extremum):
+        """
+        """
+        # TODO: if exremum has vaency 1, just remove this with the saddle, else concatenate path to another extremum same type
+        # TODO: Monkey Saddle Case
+        pass
+
+
+    def get_paths_after_cancellations(self, how='increasing-decreasing', cache: bool=True, with_bar: bool=True):
+        """
+        """
+        if cache and hasattr(self, '_paths_after_cancellations'):
+            return self._paths_after_cancellations
+
+        paths = self.get_paths(how=how, cache=cache, with_bar=with_bar)
+
+        # TODO: cancel pairs while there are detected pairs to cancel
+        pass
+
+
+        
     def iterate_paths_close_geodesics(self, how='increasing-decreasing', cache: bool=True, with_bar: bool=True):
         """
         """
@@ -294,5 +327,22 @@ class MorseSmale:
             geopath = pathtools.get_path_close_geodesic(path, self.faces, self.vertices)
             yield geopath
 
-    
 
+    def get_quadrangle_labels(self, how='increasing-decreasing', cache: bool=True, with_bar: bool=True):
+        """
+        """
+        if cache and hasattr(self, 'quadrangle_labels'):
+            return self.quadrangle_labels
+
+        # TODO: replace paths with paths_after_cancellations
+        paths = self.get_paths(how=how, cache=cache, with_bar=with_bar)
+        paths_edges = np.concatenate([np.transpose([path[1:], path[:-1]]) for path in paths], axis=0)
+        paths_edges = np.unique(np.sort(paths_edges, axis=1), axis=0)
+
+        face_adjacency = triangletools.face_adjacency(self.faces, paths_edges)
+        n_comps, comp_labels = sp.sparse.csgraph.connected_components(csgraph=face_adjacency, directed=False, return_labels=True)
+
+        # TODO: Unite components from one quadrangle, detecting corresponding boundary paths
+        pass
+
+        return comp_labels
