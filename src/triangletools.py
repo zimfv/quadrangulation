@@ -136,40 +136,106 @@ def merging_paths_intersects(path0, path1, faces):
         return True
 
 
+#def face_adjacency(faces, restricted_edges=None):
+#    """
+#    Returns the face adjacency matrix, where 2 faces are adjacent if they share a common not restricted edge
+#
+#    Parameters:
+#    -----------
+#    faces: np.array shape(n, 3)
+#        The faces of the triangulation
+#
+#    restricted_edges: np.array shape (k, 2)
+#        The list of restricted edges
+#
+#    Returns:
+#    --------
+#    A : sp.sparse.csr_matrix
+#        Face adjacency matrix
+#    """
+#    if restricted_edges is None:
+#        restricted_edges = np.zeros([0, 2], dtype=int)
+#    n = len(faces)
+#
+#    restricted_edges = np.sort(restricted_edges, axis=-1)
+#
+#    rows = []
+#    cols = []
+#    for (i0, face0), (i1, face1) in itertools.combinations(enumerate(faces), 2):
+#        if np.intersect1d(face0, face1).size == 2:
+#            if not (restricted_edges == np.intersect1d(face0, face1)).all(axis=-1).any():
+#                rows.extend([i0, i1])
+#                cols.extend([i1, i0])
+#
+#    A = sp.sparse.csr_matrix(
+#        (np.ones(len(rows), dtype=np.uint8), (rows, cols)),
+#        shape=(n, n),
+#    )
+#    return A
+
+
 def face_adjacency(faces, restricted_edges=None):
     """
-    Returns the face adjacency matrix, where 2 faces are adjacent if they share a common not restricted edge
+    Returns the face adjacency matrix, where two faces are adjacent
+    if they share a common non-restricted edge.
 
-    Parameters:
-    -----------
-    faces: np.array shape(n, 3)
-        The faces of the triangulation
+    Parameters
+    ----------
+    faces : np.ndarray, shape (n, 3)
+        Triangle vertex indices.
 
-    restricted_edges: np.array shape (k, 2)
-        The list of restricted edges
+    restricted_edges : np.ndarray, shape (k, 2), optional
+        Edges across which faces should not be considered adjacent.
 
-    Returns:
-    --------
-    A : sp.sparse.csr_matrix
-        Face adjacency matrix
+    Returns
+    -------
+    A : scipy.sparse.csr_matrix, shape (n, n)
+        Symmetric face adjacency matrix.
     """
-    if restricted_edges is None:
-        restricted_edges = np.zeros([0, 2], dtype=int)
+    faces = np.asarray(faces, dtype=int)
     n = len(faces)
 
-    restricted_edges = np.sort(restricted_edges, axis=-1)
+    if restricted_edges is None:
+        restricted_edges = np.empty((0, 2), dtype=int)
+    else:
+        restricted_edges = np.asarray(restricted_edges, dtype=int)
+
+    # Canonical orientation for restricted edges.
+    restricted_edges = np.sort(restricted_edges, axis=1)
+    restricted = {tuple(edge) for edge in restricted_edges}
+
+    # edge -> list of incident face indices
+    edge_to_faces = {}
+
+    for face_idx, (a, b, c) in enumerate(faces):
+        edges = (
+            (min(a, b), max(a, b)),
+            (min(b, c), max(b, c)),
+            (min(c, a), max(c, a)),
+        )
+
+        for edge in edges:
+            if edge not in restricted:
+                edge_to_faces.setdefault(edge, []).append(face_idx)
 
     rows = []
     cols = []
-    for (i0, face0), (i1, face1) in itertools.combinations(enumerate(faces), 2):
-        if np.intersect1d(face0, face1).size == 2:
-            if not (restricted_edges == np.intersect1d(face0, face1)).all(axis=-1).any():
-                rows.extend([i0, i1])
-                cols.extend([i1, i0])
 
-    A = sp.sparse.csr_matrix(
-        (np.ones(len(rows), dtype=np.uint8), (rows, cols)),
+    for incident_faces in edge_to_faces.values():
+        # Normal manifold case: an edge belongs to two faces.
+        # This also handles non-manifold edges with >2 incident faces.
+        for i in range(len(incident_faces)):
+            for j in range(i + 1, len(incident_faces)):
+                f0 = incident_faces[i]
+                f1 = incident_faces[j]
+
+                rows.extend((f0, f1))
+                cols.extend((f1, f0))
+
+    data = np.ones(len(rows), dtype=np.uint8)
+
+    return sp.sparse.csr_matrix(
+        (data, (rows, cols)),
         shape=(n, n),
+        dtype=np.uint8,
     )
-    return A
-

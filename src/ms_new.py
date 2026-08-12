@@ -13,6 +13,9 @@ from src import mesh_topology
 from tqdm import tqdm
 import warnings
 
+from src.timing import Timer
+
+
 
 
 
@@ -391,7 +394,18 @@ class MorseSmale:
         return paths
 
 
+    def get_labels_separated_by_paths(self, paths):
+        """
+        """
+        paths_edges = np.concatenate([np.transpose([path[1:], path[:-1]]) for path in paths], axis=0)
+        paths_edges = np.unique(np.sort(paths_edges, axis=1), axis=0)
+
+        with Timer(desc='Got face adjacency', active=True):
+            face_adjacency = triangletools.face_adjacency(self.faces, paths_edges)
         
+        with Timer(desc='Separated face graph', active=True):
+            n_comps, comp_labels = sp.sparse.csgraph.connected_components(csgraph=face_adjacency, directed=False, return_labels=True)
+        return comp_labels
 
 
     def get_quadrangle_labels(self, how='increasing-decreasing', cache: bool=True, with_bar: bool=True, cancellation_failure_strategy="raise"):
@@ -400,15 +414,9 @@ class MorseSmale:
         if cache and hasattr(self, 'quadrangle_labels'):
             return self.quadrangle_labels
 
-        # TODO: replace paths with paths_after_cancellations
         paths = self.get_paths_after_cancellations(how=how, cache=cache, with_bar=with_bar, 
                                                    cancellation_failure_strategy=cancellation_failure_strategy)
-
-        paths_edges = np.concatenate([np.transpose([path[1:], path[:-1]]) for path in paths], axis=0)
-        paths_edges = np.unique(np.sort(paths_edges, axis=1), axis=0)
-
-        face_adjacency = triangletools.face_adjacency(self.faces, paths_edges)
-        n_comps, comp_labels = sp.sparse.csgraph.connected_components(csgraph=face_adjacency, directed=False, return_labels=True)
+        comp_labels = self.get_labels_separated_by_paths(paths)
 
         # TODO: Unite components from one quadrangle, detecting corresponding boundary paths
         pass
