@@ -11,7 +11,7 @@ from src import triangletools
 from src import mesh_topology
 
 from tqdm import tqdm
-
+import warnings
 
 
 
@@ -285,6 +285,14 @@ class MorseSmale:
         if cache:
             self._paths = paths
         return paths
+    
+
+    def iterate_paths_close_geodesics(self, how='increasing-decreasing', cache: bool=True, with_bar: bool=True):
+        """
+        """
+        for path in self.get_paths(how=how, cache=cache, with_bar=with_bar):
+            geopath = pathtools.get_path_close_geodesic(path, self.faces, self.vertices)
+            yield geopath
 
 
     def get_protected_critical_points(self):
@@ -296,18 +304,58 @@ class MorseSmale:
     def detect_cancelling_pairs(self, paths):
         """
         """
-        # TODO: We should cancel the critical points having only 1 or 2 paths and find the closest by filtration unprotected extremem
-        pass 
+        path_starts = np.array([path[0] for path in paths])
+        path_ends = np.array([path[-1] for path in paths])
+        extremums = np.concatenate([self.local_maxima, self.local_minima])
+        extremums = np.setdiff1d(extremums, self.protected)
+        extremums_paths_count = (extremums[:, None] == path_ends).sum(axis=1)
+        canceling_extremums = extremums[(extremums_paths_count == 1) | (extremums_paths_count == 2)]
 
-    def cancel_pair(paths, saddle, extremum):
+        cancelling_pairs = []
+        for extremum in canceling_extremums:
+            extremum_value = self.values[extremum]
+
+            connected_saddles = np.unique(path_starts[np.argwhere(path_ends == extremum).ravel()])
+            connected_saddles = np.setdiff1d(connected_saddles, self.protected)
+            # TODO: Monkey saddle case. In this case we can be able to cancel the saddle from the boundary
+            pass
+
+            if len(connected_saddles) == 0:
+                connected_saddles = np.unique(path_starts[np.argwhere(path_ends == extremum).ravel()])
+                msg = f"The extrmum {extremum} with just {len(connected_saddles)} relations is uncancellable:\n"
+                msg += f"All related saddles {connected_saddles} are protected from cancellation."
+                raise ValueError(msg)
+
+            connected_saddles_values = self.values[connected_saddles]
+
+            saddle = connected_saddles[np.argmin(abs(connected_saddles_values - extremum_value))]
+            cancelling_pairs.append((saddle, extremum))
+        
+        return cancelling_pairs
+
+
+
+    def cancel_pair(self, paths, saddle, extremum):
         """
         """
-        # TODO: if exremum has vaency 1, just remove this with the saddle, else concatenate path to another extremum same type
-        # TODO: Monkey Saddle Case
-        pass
+        saddle_paths = [path for path in paths if path[0] == saddle]
+        extremum_paths = [path for path in paths if path[-1] == extremum]
+
+        if len(saddle_paths) == 4:
+            paths_after_cancelation = [path for path in paths if (path[0] != saddle) and (path[-1] != extremum)]
+            if len(extremum_paths) == 2:
+                opposite_path = [path for path in saddle_paths if (tuple(path[[0, -1]]) != (saddle, extremum)) and (self.values[path[0]] - self.values[path[1]])*(self.values[saddle] - self.values[extremum]) > 0][0]
+                new_path = pathtools.concatenate_paths(pathtools.concatenate_paths(extremum_paths[0], extremum_paths[1]), opposite_path)
+                if new_path[0] not in self.saddles:
+                    new_path = new_path[::-1]
+                paths_after_cancelation.append(new_path)
+            return paths_after_cancelation
+        else:
+            # TODO: Monkey Saddle Case
+            pass
 
 
-    def get_paths_after_cancellations(self, how='increasing-decreasing', cache: bool=True, with_bar: bool=True):
+    def get_paths_after_cancellations(self, how='increasing-decreasing', cache: bool=True, with_bar: bool=True, cancellation_failure_strategy="raise"):
         """
         """
         if cache and hasattr(self, '_paths_after_cancellations'):
@@ -315,27 +363,47 @@ class MorseSmale:
 
         paths = self.get_paths(how=how, cache=cache, with_bar=with_bar)
 
-        # TODO: cancel pairs while there are detected pairs to cancel
-        pass
+
+        def cancellation_failure(paths, err: ValueError):
+            if cancellation_failure_strategy == 'raise':
+                raise err
+            if cancellation_failure_strategy == 'warn':
+                warnings.warn(str(err))
+                return paths
+            if cancellation_failure_strategy == 'return':
+                return paths
+
+        try:
+            cancelling_pairs = self.detect_cancelling_pairs(paths)
+        except ValueError as err:
+            cancellation_failure(paths, err)
+
+        while len(cancelling_pairs) > 0:
+            try:
+                saddle, extremum = cancelling_pairs[0]
+                paths = self.cancel_pair(paths, saddle, extremum)
+                cancelling_pairs = self.detect_cancelling_pairs(paths)
+            except ValueError as err:
+                cancellation_failure(paths, err)
+
+        if cache:
+            self._paths_after_cancellations = paths
+        return paths
 
 
         
-    def iterate_paths_close_geodesics(self, how='increasing-decreasing', cache: bool=True, with_bar: bool=True):
-        """
-        """
-        for path in self.get_paths(how=how, cache=cache, with_bar=with_bar):
-            geopath = pathtools.get_path_close_geodesic(path, self.faces, self.vertices)
-            yield geopath
 
 
-    def get_quadrangle_labels(self, how='increasing-decreasing', cache: bool=True, with_bar: bool=True):
+    def get_quadrangle_labels(self, how='increasing-decreasing', cache: bool=True, with_bar: bool=True, cancellation_failure_strategy="raise"):
         """
         """
         if cache and hasattr(self, 'quadrangle_labels'):
             return self.quadrangle_labels
 
         # TODO: replace paths with paths_after_cancellations
-        paths = self.get_paths(how=how, cache=cache, with_bar=with_bar)
+        paths = self.get_paths_after_cancellations(how=how, cache=cache, with_bar=with_bar, 
+                                                   cancellation_failure_strategy=cancellation_failure_strategy)
+
         paths_edges = np.concatenate([np.transpose([path[1:], path[:-1]]) for path in paths], axis=0)
         paths_edges = np.unique(np.sort(paths_edges, axis=1), axis=0)
 
@@ -346,3 +414,4 @@ class MorseSmale:
         pass
 
         return comp_labels
+
