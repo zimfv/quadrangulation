@@ -400,12 +400,10 @@ class MorseSmale:
         paths_edges = np.concatenate([np.transpose([path[1:], path[:-1]]) for path in paths], axis=0)
         paths_edges = np.unique(np.sort(paths_edges, axis=1), axis=0)
 
-        with Timer(desc='Got face adjacency', active=True):
-            face_adjacency = triangletools.face_adjacency(self.faces, paths_edges)
-        
-        with Timer(desc='Separated face graph', active=True):
-            n_comps, comp_labels = sp.sparse.csgraph.connected_components(csgraph=face_adjacency, directed=False, return_labels=True)
-        return comp_labels
+        face_adjacency = triangletools.face_adjacency(self.faces, paths_edges)
+        n_comps, comp_labels = sp.sparse.csgraph.connected_components(csgraph=face_adjacency, directed=False, return_labels=True)
+
+        return n_comps, comp_labels
 
 
     def get_quadrangle_labels(self, how='increasing-decreasing', cache: bool=True, with_bar: bool=True, cancellation_failure_strategy="raise"):
@@ -416,10 +414,29 @@ class MorseSmale:
 
         paths = self.get_paths_after_cancellations(how=how, cache=cache, with_bar=with_bar, 
                                                    cancellation_failure_strategy=cancellation_failure_strategy)
-        comp_labels = self.get_labels_separated_by_paths(paths)
+        paths_sides = [pathtools.get_path_sides(path, self.faces) for path in paths]
+        paths_sides_paired = [path_sides for path_sides in paths_sides if len(path_sides) == 2]
+        sides = list(itertools.chain(*paths_sides))
 
-        # TODO: Unite components from one quadrangle, detecting corresponding boundary paths
-        pass
+        n_comps, comp_labels = self.get_labels_separated_by_paths(paths)
 
-        return comp_labels
+        # Unite components from one quadrangle, detecting corresponding boundary paths
+        sides_groups = [np.unique(comp_labels[side]) for side in sides]
+        sides_antigroups_pairs = [(np.unique(comp_labels[side0]), np.unique(comp_labels[side1])) for side0, side1 in paths_sides_paired]
+
+        rows, cols = np.concatenate([[group[1:], group[:-1]] for group in sides_groups], axis=1)
+
+        for antigroup0, antigroup1 in sides_antigroups_pairs:
+            drop_condition = (np.isin(rows, antigroup0) & np.isin(cols, antigroup1)) | (np.isin(rows, antigroup1) & np.isin(cols, antigroup0))
+            rows = rows[~drop_condition]
+            cols = cols[~drop_condition]
+
+
+        adjacency_matrix = sp.sparse.csr_matrix((np.ones(len(rows)), (rows, cols)), shape=(n_comps, n_comps), dtype=np.uint8)
+
+        n_quadrangles, labels2quadrangles = sp.sparse.csgraph.connected_components(csgraph=adjacency_matrix, directed=False, return_labels=True)
+
+        quadrangles_labels = labels2quadrangles[comp_labels]
+
+        return quadrangles_labels
 
