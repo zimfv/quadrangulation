@@ -136,42 +136,44 @@ def merging_paths_intersects(path0, path1, faces):
         return True
 
 
-#def face_adjacency(faces, restricted_edges=None):
-#    """
-#    Returns the face adjacency matrix, where 2 faces are adjacent if they share a common not restricted edge
-#
-#    Parameters:
-#    -----------
-#    faces: np.array shape(n, 3)
-#        The faces of the triangulation
-#
-#    restricted_edges: np.array shape (k, 2)
-#        The list of restricted edges
-#
-#    Returns:
-#    --------
-#    A : sp.sparse.csr_matrix
-#        Face adjacency matrix
-#    """
-#    if restricted_edges is None:
-#        restricted_edges = np.zeros([0, 2], dtype=int)
-#    n = len(faces)
-#
-#    restricted_edges = np.sort(restricted_edges, axis=-1)
-#
-#    rows = []
-#    cols = []
-#    for (i0, face0), (i1, face1) in itertools.combinations(enumerate(faces), 2):
-#        if np.intersect1d(face0, face1).size == 2:
-#            if not (restricted_edges == np.intersect1d(face0, face1)).all(axis=-1).any():
-#                rows.extend([i0, i1])
-#                cols.extend([i1, i0])
-#
-#    A = sp.sparse.csr_matrix(
-#        (np.ones(len(rows), dtype=np.uint8), (rows, cols)),
-#        shape=(n, n),
-#    )
-#    return A
+'''
+def face_adjacency(faces, restricted_edges=None):
+    """
+    Returns the face adjacency matrix, where 2 faces are adjacent if they share a common not restricted edge
+
+    Parameters:
+    -----------
+    faces: np.array shape(n, 3)
+        The faces of the triangulation
+
+    restricted_edges: np.array shape (k, 2)
+        The list of restricted edges
+
+    Returns:
+    --------
+    A : sp.sparse.csr_matrix
+        Face adjacency matrix
+    """
+    if restricted_edges is None:
+        restricted_edges = np.zeros([0, 2], dtype=int)
+    n = len(faces)
+
+    restricted_edges = np.sort(restricted_edges, axis=-1)
+
+    rows = []
+    cols = []
+    for (i0, face0), (i1, face1) in itertools.combinations(enumerate(faces), 2):
+        if np.intersect1d(face0, face1).size == 2:
+            if not (restricted_edges == np.intersect1d(face0, face1)).all(axis=-1).any():
+                rows.extend([i0, i1])
+                cols.extend([i1, i0])
+
+    A = sp.sparse.csr_matrix(
+        (np.ones(len(rows), dtype=np.uint8), (rows, cols)),
+        shape=(n, n),
+    )
+    return A
+'''
 
 
 def face_adjacency(faces, restricted_edges=None):

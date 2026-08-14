@@ -1,4 +1,5 @@
 import numpy as np
+import networkx as nx
 
 
 def get_boundary_edges(faces):
@@ -24,3 +25,14 @@ def get_conic_vertices(faces):
             conic_vertices.append(vertex)
     conic_vertices = np.array(conic_vertices)
     return conic_vertices
+
+
+def get_skeleton_graph(faces, with_boundary_edges: bool=True, with_conic_vertices: bool=True) -> nx.Graph:
+    """
+    """
+    graph = nx.Graph()
+    if with_boundary_edges:
+        graph.add_edges_from(get_boundary_edges(faces))
+    if with_conic_vertices:
+        graph.add_nodes_from(get_conic_vertices(faces))
+    return graph

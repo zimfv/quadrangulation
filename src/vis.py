@@ -4,7 +4,7 @@ import pyvista as pv
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 
-from src.ms import MorseSmale
+from src.ms_old import MorseSmale
 
 
 def get_pv_mesh(vertices, faces):
