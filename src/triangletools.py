@@ -26,6 +26,90 @@ def compact_mesh(V, F):
     return V2, F2, old2new, new2old
 
 
+def edge_list_to_cut_mask(F, edges_to_cut):
+    edges_to_cut = {
+        tuple(sorted((int(a), int(b))))
+        for a, b in edges_to_cut
+    }
+
+    cuts = np.zeros((len(F), 3), dtype=bool)
+
+    for fi, face in enumerate(F):
+        # cut_mesh uses the edge opposite each corner
+        face_edges = [
+            (face[1], face[2]),  # opposite corner 0
+            (face[2], face[0]),  # opposite corner 1
+            (face[0], face[1]),  # opposite corner 2
+        ]
+
+        for c, edge in enumerate(face_edges):
+            if tuple(sorted(edge)) in edges_to_cut:
+                cuts[fi, c] = True
+
+    return cuts
+
+
+def cut_mesh(V, F, edges_to_cut, return_all_copies: bool=False):
+    """
+    Cut a triangular mesh along existing edges using libigl.
+
+    Parameters
+    ----------
+    V : (n, d) array
+        Vertex positions.
+
+    F : (m, 3) int array
+        Triangle indices.
+
+    edges_to_cut : (k, 2) int array
+        Undirected vertex-index pairs in the ORIGINAL mesh.
+
+    return_all_copies : bool, optional
+        If False (default), ``old2new[v]`` is a single vertex index in the
+        cut mesh corresponding to original vertex ``v``. If True,
+        ``old2new[v]`` is a list containing all corresponding vertex indices,
+        including copies introduced by the cut.
+        
+    Returns
+    -------
+    V2 : (n2, d) array
+        Vertices after cutting.
+
+    F2 : (m, 3) int array
+        Faces after cutting.
+
+    old2new : list[list[int]]
+        Mapping from original to cut-mesh vertices. If
+        ``old2new_with_copies=False``, each entry contains one corresponding
+        vertex index. If ``old2new_with_copies=True``, each entry contains
+        all corresponding vertex indices, including copies introduced by
+        the cut.
+    
+    new2old : (n2,) int array
+        new2old[v2] gives the original vertex corresponding to v2.
+
+    """
+    V = np.asarray(V)
+    F = np.asarray(F, dtype=int)
+    edges_to_cut = np.asarray(edges_to_cut, dtype=int)
+    print(f'edges_to_cut.shape = {edges_to_cut.shape}')
+    C = edge_list_to_cut_mask(F, edges_to_cut)
+    print(f'C.shape = {C.shape}')
+
+    
+    V2, F2, new2old = igl.cut_mesh(V, F, C)
+    print(f'')
+
+    old2new = [[] for _ in range(len(V))]
+    for i, j in enumerate(new2old):
+        old2new[j].append(i)
+    if not return_all_copies:
+        old2new = np.array([-1 if len(i) == 0 else i[0] for i in old2new])
+
+    return V2, F2, old2new, new2old
+
+
+
 def count_new_vertices(faces, new_face):
     """
     """

@@ -58,7 +58,6 @@ def add_graph_to_plotter(pl: pv.Plotter, G: nx.Graph, pos, offset=(0.0, 0.0, 0.0
         directed = G.is_directed()
 
     pts = pv.PolyData(P)
-    edges_pd, node_index = _edges_polydata(nodes, P, G.edges())
 
     if isinstance(node_color, (list, np.ndarray)):
         node_color = np.asarray(node_color)
@@ -69,8 +68,20 @@ def add_graph_to_plotter(pl: pv.Plotter, G: nx.Graph, pos, offset=(0.0, 0.0, 0.0
         pl.add_mesh(pts, scalars="node_color", rgb=True, point_size=node_size, render_points_as_spheres=True)
     else:
         pl.add_mesh(pts, color=node_color, point_size=node_size, render_points_as_spheres=True)
-    
-    pl.add_mesh(edges_pd, color=edge_color, line_width=edge_width, render_lines_as_tubes=True)
+
+
+
+    edges_pd, node_index = _edges_polydata(nodes, P, G.edges())
+    if isinstance(edge_color, (list, np.ndarray)):
+        colors = np.unique(edge_color)
+        colors_edges = [[edge for edge, this_color in zip(G.edges(), edge_color) if this_color == color] for color in colors]
+        for subedges, color in zip(colors_edges, colors):
+            subedges_pd, subnode_index = _edges_polydata(nodes, P, subedges)
+            pl.add_mesh(subedges_pd, color=color, line_width=edge_width, render_lines_as_tubes=True)
+
+
+    else:
+        pl.add_mesh(edges_pd, color=edge_color, line_width=edge_width, render_lines_as_tubes=True)
 
     if add_labels:
         pl.add_point_labels(P, [str(n) for n in nodes], point_size=0, font_size=12)
