@@ -4,6 +4,8 @@ import networkx as nx
 import scipy as sp
 import igl
 
+from collections import defaultdict
+
 
 def compact_mesh(V, F):
     """
@@ -26,88 +28,124 @@ def compact_mesh(V, F):
     return V2, F2, old2new, new2old
 
 
-def edge_list_to_cut_mask(F, edges_to_cut):
-    edges_to_cut = {
-        tuple(sorted((int(a), int(b))))
-        for a, b in edges_to_cut
-    }
-
-    cuts = np.zeros((len(F), 3), dtype=bool)
-
-    for fi, face in enumerate(F):
-        # cut_mesh uses the edge opposite each corner
-        face_edges = [
-            (face[1], face[2]),  # opposite corner 0
-            (face[2], face[0]),  # opposite corner 1
-            (face[0], face[1]),  # opposite corner 2
-        ]
-
-        for c, edge in enumerate(face_edges):
-            if tuple(sorted(edge)) in edges_to_cut:
-                cuts[fi, c] = True
-
-    return cuts
-
-
-def cut_mesh(V, F, edges_to_cut, return_all_copies: bool=False):
+def cut_mesh_along_edges(V, F, cut_edges):
     """
-    Cut a triangular mesh along existing edges using libigl.
+    Cut a triangle mesh along specified edges.
 
     Parameters
     ----------
-    V : (n, d) array
-        Vertex positions.
-
+    V : (n, 3) array
     F : (m, 3) int array
-        Triangle indices.
+    cut_edges : iterable of (i, j)
+        Edges in the indexing of V. Orientation does not matter.
 
-    edges_to_cut : (k, 2) int array
-        Undirected vertex-index pairs in the ORIGINAL mesh.
-
-    return_all_copies : bool, optional
-        If False (default), ``old2new[v]`` is a single vertex index in the
-        cut mesh corresponding to original vertex ``v``. If True,
-        ``old2new[v]`` is a list containing all corresponding vertex indices,
-        including copies introduced by the cut.
-        
     Returns
     -------
-    V2 : (n2, d) array
+    SV : (n_new, 3) array
         Vertices after cutting.
-
-    F2 : (m, 3) int array
+    SF : (m, 3) int array
         Faces after cutting.
-
-    old2new : list[list[int]]
-        Mapping from original to cut-mesh vertices. If
-        ``old2new_with_copies=False``, each entry contains one corresponding
-        vertex index. If ``old2new_with_copies=True``, each entry contains
-        all corresponding vertex indices, including copies introduced by
-        the cut.
-    
-    new2old : (n2,) int array
-        new2old[v2] gives the original vertex corresponding to v2.
-
+    SVI : (n_new,) int array
+        SVI[new_vertex] = original vertex in V.
     """
-    V = np.asarray(V)
-    F = np.asarray(F, dtype=int)
-    edges_to_cut = np.asarray(edges_to_cut, dtype=int)
-    print(f'edges_to_cut.shape = {edges_to_cut.shape}')
-    C = edge_list_to_cut_mask(F, edges_to_cut)
-    print(f'C.shape = {C.shape}')
 
-    
-    V2, F2, new2old = igl.cut_mesh(V, F, C)
-    print(f'')
+    cut_edges = {
+        (min(a, b), max(a, b))
+        for a, b in cut_edges
+    }
 
-    old2new = [[] for _ in range(len(V))]
-    for i, j in enumerate(new2old):
-        old2new[j].append(i)
-    if not return_all_copies:
-        old2new = np.array([-1 if len(i) == 0 else i[0] for i in old2new])
+    nV = len(V)
+    nF = len(F)
 
-    return V2, F2, old2new, new2old
+    # Faces incident to every vertex
+    vertex_faces = [[] for _ in range(nV)]
 
+    for fi, face in enumerate(F):
+        for v in face:
+            vertex_faces[v].append(fi)
+
+    # For each vertex v, construct adjacency between incident faces.
+    #
+    # Two faces are connected around v if they share an edge containing v
+    # AND that edge is not a cut edge.
+    face_neighbors_at_vertex = [
+        defaultdict(set) for _ in range(nV)
+    ]
+
+    # edge -> incident faces
+    edge_faces = defaultdict(list)
+
+    for fi, (a, b, c) in enumerate(F):
+        for u, v in ((a, b), (b, c), (c, a)):
+            e = (min(u, v), max(u, v))
+            edge_faces[e].append(fi)
+
+    for (u, v), faces in edge_faces.items():
+
+        # Skeleton edge: don't connect triangle fans through it
+        if (u, v) in cut_edges:
+            continue
+
+        if len(faces) == 2:
+            f0, f1 = faces
+
+            face_neighbors_at_vertex[u][f0].add(f1)
+            face_neighbors_at_vertex[u][f1].add(f0)
+
+            face_neighbors_at_vertex[v][f0].add(f1)
+            face_neighbors_at_vertex[v][f1].add(f0)
+
+    # new_index[(old_vertex, face)] gives the copy of old_vertex
+    # used by that particular face.
+    new_index = {}
+
+    new_vertices = []
+    SVI = []
+
+    for v in range(nV):
+
+        incident = vertex_faces[v]
+
+        if not incident:
+            continue
+
+        unvisited = set(incident)
+
+        while unvisited:
+
+            seed = unvisited.pop()
+            component = [seed]
+            stack = [seed]
+
+            while stack:
+                f = stack.pop()
+
+                for g in face_neighbors_at_vertex[v].get(f, ()):
+                    if g in unvisited:
+                        unvisited.remove(g)
+                        stack.append(g)
+                        component.append(g)
+
+            # One vertex copy for this connected triangle fan
+            new_v = len(new_vertices)
+
+            new_vertices.append(V[v])
+            SVI.append(v)
+
+            for fi in component:
+                new_index[(v, fi)] = new_v
+
+    # Rewrite faces
+    SF = np.empty_like(F)
+
+    for fi, face in enumerate(F):
+        for j, v in enumerate(face):
+            SF[fi, j] = new_index[(v, fi)]
+
+    SV = np.asarray(new_vertices)
+    SVI = np.asarray(SVI, dtype=np.int64)
+
+    return SV, SF, SVI
 
 
 def count_new_vertices(faces, new_face):

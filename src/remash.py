@@ -1,7 +1,9 @@
 import numpy as np
 import igl
+import itertools
 
 from src.shapes import split_edge
+
 
 def flip_ears_defining_boundary(faces):
     """
