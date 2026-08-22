@@ -400,20 +400,22 @@ def solve_boundary_hermonics(faces, boundary_indices, boundary_values, vertices=
     second_boundary_values = x.value
 
     # check if there are edges with similar values
+    '''
     edges = np.unique(np.sort(np.argwhere(adj), axis=1), axis=0)
     edges_vals = v.value[edges]
     edges_similar = edges[edges_vals[:, 0] == edges_vals[:, 1]]
+    print(edges_similar)
     if edges_similar.size > 0:
         for e0, e1 in edges_similar:
             surrounding_nodes = np.unique(np.argwhere(adj[[e0, e1]])[:, 1])
             surrounding_vals = np.unique(v.value[surrounding_nodes])
+            print(f'               surrounding_vals: {surrounding_vals}')
             surrounding_eps = 0.25*(surrounding_vals[1:] - surrounding_vals[:-1]).min()
             if e0 > len(boundary_indices):
                 second_boundary_values[e0 - len(boundary_indices)] -= surrounding_eps
             if e1 > len(boundary_indices):
                 second_boundary_values[e1 - len(boundary_indices)] += surrounding_eps
-
-
+    '''
     return second_boundary_indices, second_boundary_values
 
 
@@ -509,17 +511,18 @@ def second_boundary_dirichlet_laplacian_eigenfunction_plus_harmonic(vertices, fa
     u = solve_second_boundary_hermonics(vertices, faces, boundary_indices, boundary_values, 
                                         boundary_mins=boundary_mins, boundary_maxs=boundary_maxs, 
                                         boundary_cons=boundary_cons, conus_strategy=conus_strategy, 
-                                        eps=None, k=harmonic_power)
+                                        eps=eps, k=harmonic_power)
 
-    if eigen_index == 0:
-        eval = 0
-    else:
-        evals, evecs = second_boundary_dirichlet_laplacian_eigenfunctions(vertices, faces, boundary_indices=boundary_indices, k=eigen_index, which=which)
-        eval = evals[-1]
+    #if eigen_index == 0:
+    #    eval = 0
+    #else:
+    #    evals, evecs = second_boundary_dirichlet_laplacian_eigenfunctions(vertices, faces, boundary_indices=boundary_indices, k=eigen_index, which=which)
+    #    eval = evals[0]
+    #
+    #if eval_harmonic_ratio is not None:
+    #    eval *= eval_harmonic_ratio*np.max(abs(u))/np.max(abs(eval))
+    #
+    #res = eval + u
 
-    if eval_harmonic_ratio is not None:
-        eval *= eval_harmonic_ratio*np.max(abs(u))/np.max(abs(eval))
-    
-    res = eval + u
-
+    res = u
     return res

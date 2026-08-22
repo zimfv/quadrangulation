@@ -78,7 +78,7 @@ class Stratified:
         """
         skeleton_values = skeleton_values_function(self.skeleton_graph, self.vertices, **kwargs)
 
-        self.values = np.zeros(len(self.vertices))
+        self.values = np.nan*np.zeros(len(self.vertices))
         self.values[self.skeleton_indices] = skeleton_values
         return self.values
 
@@ -172,6 +172,7 @@ class Stratified:
             new_values = np.zeros(len(self.vertices))
             new_values[:len(self.values)] = self.values
             self.values = new_values
+        self.__dict__.pop("edges", None)
         self.define_strats()
         
 
